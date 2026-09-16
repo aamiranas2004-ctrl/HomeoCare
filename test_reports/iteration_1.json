@@ -1,0 +1,47 @@
+{
+  "summary": "Backend-only testing for Agrawal Homeo Hall clinic app (first iteration). Built a comprehensive pytest suite (40 tests) at /app/backend/tests/test_agrawal_homeo_backend.py covering health, site content, doctors list, phone OTP flow (request/verify/universal 123456), UHID auto-generation, session lifecycle (me/logout/bad-token/no-token), seeded doctor login, appointments (create/mine/get/patch, role-403, unknown-doctor-404, cross-patient-403), files (upload to Emergent Object Storage, mine, per-patient list, content streaming as owner + doctor, doctor reply, patient-cannot-reply-403), doctor->patients enrichment listing & detail, and unauthorized-401 checks on all protected routes. Result: 40/40 PASSED serially, 39/40 in parallel (xdist ordering artifact, not a bug). Object Storage upload+read verified against real Emergent proxy. Role enforcement, UHID format AHH-YYYY-NNNNN, and session expiry all behaving correctly.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/files/mine (doctor)", "issue": "Returns ALL files globally with no pagination limit (500). Fine for now but should be scoped/paginated for scale."},
+      {"endpoint": "POST /api/auth/otp/request", "issue": "OTP is logged in plain text and returned in response body. This is intentional dev mode per code comment, but must be gated behind an env flag before production."},
+      {"endpoint": "PATCH /api/appointments/{id}", "issue": "Only the assigned doctor can update, but there is no route to let a patient cancel their own appointment. Consider adding patient-side cancel."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/conftest.py",
+    "/app/backend/tests/test_agrawal_homeo_backend.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Add pagination/scoping to GET /api/files/mine for doctor role (currently returns up to 500 unscoped).",
+    "Introduce an env flag (e.g. DEV_MODE) to hide otp_dev from response and stop logging OTPs before going to production.",
+    "Add a patient-side endpoint (or extend PATCH) to allow patients to cancel their own pending appointments.",
+    "Consider serial or loadfile xdist scope for the test suite to avoid inter-class ordering flakiness (fixture-created data used across classes)."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 675 lines and mixes auth/appointments/files/doctor/storage concerns; consider splitting into modules (auth.py, appointments.py, files.py, storage.py) once features stabilize.",
+    "AsyncIOMotorClient is used correctly and MongoDB _id is excluded via projection {'_id': 0} in every find - good.",
+    "Storage init uses a module-global `storage_key` and blocking `requests`; wrapped in run_in_threadpool - acceptable but consider httpx.AsyncClient for consistency.",
+    "PATCH /api/files/{id}/reply does not verify the file belongs to a patient the doctor is treating - any authenticated doctor can reply to any file. Not necessarily wrong for a single-clinic app (only one doctor seeded) but worth documenting.",
+    "generate_uhid() has an unbounded while loop and no max retries - extremely low collision risk with 90k space, but a safety cap wouldn't hurt.",
+    "@app.on_event('startup'/'shutdown') is deprecated in FastAPI - migrate to lifespan context manager.",
+    "CORS allow_origins=['*'] with allow_credentials=True is technically invalid per browsers; safe here because Bearer token is used, but flag for future auth cookies."
+  ],
+  "updated_files": [
+    "/app/backend/tests/conftest.py (new)",
+    "/app/backend/tests/test_agrawal_homeo_backend.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "not_tested"},
+  "seed_data_creation": "Test suite creates several TEST_ patients with random +9199xxxxxxxxx phones and one TEST appointment + one TEST 1x1 PNG file per full run. Data uses TEST prefixes in names/notes for easy identification. No production data is modified. The seeded doctor Dr. Sonima Agrawal (created by server startup) is reused for doctor login.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend is fully green. If re-running the pytest suite, prefer serial execution or -p no:xdist because TestFiles and TestDoctorPatients share fixtures via module-level pytest.file_id / pytest.appt_id and can race when xdist splits by class. External base URL comes from /app/frontend/.env EXPO_PUBLIC_BACKEND_URL. Emergent Object Storage init succeeded on startup; if it ever fails, /files endpoints will return 502 - check logs. Universal OTP 123456 always verifies. Fresh patients get UHID pattern AHH-YYYY-NNNNN automatically on OTP verify.",
+  "rca_of_issue": "N/A - no production bugs found. The lone parallel-mode failure (test_doctor_patients_list: files_count 0 vs >=1) was caused by pytest-xdist LoadScopeScheduling running TestFiles and TestDoctorPatients on separate workers, so the file upload had not persisted before the doctor-patients count was read. Confirmed by re-running with -o addopts='' (serial): 40/40 passed."
+}

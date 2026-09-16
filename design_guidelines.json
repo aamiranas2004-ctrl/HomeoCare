@@ -1,0 +1,212 @@
+{
+  "app_name": "Agrawal Homeo Hall",
+  "personality": "1 iOS-Native Clean",
+  "personality_one_liner": "Trustworthy, clean, and medical with soothing green and blue accents built on a soft neutral foundation for maximum clarity.",
+  "color": {
+    "surface": "#FFFFFF",
+    "onSurface": "#0F172A",
+    "surfaceSecondary": "#F8FAFC",
+    "onSurfaceSecondary": "#334155",
+    "surfaceTertiary": "#F1F5F9",
+    "onSurfaceTertiary": "#475569",
+    "surfaceInverse": "#0F172A",
+    "onSurfaceInverse": "#F8FAFC",
+    "brand": "#059669",
+    "onBrand": "#FFFFFF",
+    "brandPrimary": "#059669",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#2563EB",
+    "onBrandSecondary": "#FFFFFF",
+    "brandTertiary": "#D1FAE5",
+    "onBrandTertiary": "#065F46",
+    "success": "#10B981",
+    "onSuccess": "#FFFFFF",
+    "warning": "#F59E0B",
+    "onWarning": "#FFFFFF",
+    "error": "#EF4444",
+    "onError": "#FFFFFF",
+    "info": "#3B82F6",
+    "onInfo": "#FFFFFF",
+    "border": "#E2E8F0",
+    "borderStrong": "#CBD5E1",
+    "divider": "#F1F5F9",
+    "muted": "#64748B"
+  },
+  "typography": {
+    "displayFontFamily": "Plus Jakarta Sans",
+    "textFontFamily": "Geist",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Handle spacing correctly dont have extra spaces where its not required, handle padding and margin corectly and subtle for buttons and components",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": "1",
+  "navigation": "bottom_tabs",
+  "icon_set": "Ionicons",
+  "glassmorphism": {
+    "enabled": "true",
+    "do's": [
+      "Apply to bottom tab bar when content scrolls behind it",
+      "Apply to sticky headers over scrolling content",
+      "Apply to floating action buttons over tinted background"
+    ],
+    "dont's": [
+      "Do not apply to form fields or list rows",
+      "Do not use if it hurts text readability; use tinted base underneath"
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "haptics": {
+    "events": {
+      "primary_button_press": "selection",
+      "tab_change": "selection",
+      "booking_confirm": "success",
+      "error_state": "error"
+    }
+  },
+  "screens": [
+    {
+      "name": "Splash & Role Select",
+      "purpose": "First impression and user routing.",
+      "states": {
+        "loading": "Subtle green spinner with clinic logo",
+        "empty": "N/A",
+        "error": "N/A"
+      },
+      "layout": "Full-bleed background using abstract green medical backdrop with dark gradient scrim. Clean, full-width pill buttons for 'I am a Patient' and 'I am a Doctor' anchored at bottom."
+    },
+    {
+      "name": "Login",
+      "purpose": "Authenticate user via Phone/OTP or Google.",
+      "states": {
+        "loading": "Input disabled, CTA shows loading state",
+        "empty": "N/A",
+        "error": "Inline red validation below inputs"
+      },
+      "layout": "Clean white surface with large typography for trust. Single column form, labels above inputs, phone number entry with floating sticky CTA at the bottom. 'Continue with Google' as secondary action."
+    },
+    {
+      "name": "Patient Home",
+      "purpose": "Dashboard for patients to view upcoming visits and quick actions.",
+      "states": {
+        "loading": "Skeleton loader for upcoming appointment card and doctors list",
+        "empty": "Illustration of medical clipboard with 'No upcoming appointments'",
+        "error": "Failed to load data with retry button"
+      },
+      "layout": "Header with 'Hello, [Name]' and UHID badge. Top section: Featured 'Upcoming Appointment' card (glassmorphism effect if image behind). Middle: 2-column grid for quick actions (Book, Upload, Services). Bottom: Horizontal scroll list of Doctors from clinic."
+    },
+    {
+      "name": "Book Appointment",
+      "purpose": "Step-by-step appointment scheduling flow.",
+      "states": {
+        "loading": "Spinner over calendar when fetching available slots",
+        "empty": "No slots available on selected day",
+        "error": "Failed to book, try again"
+      },
+      "layout": "Progress indicator at top. Calendar view with touch-friendly date cells, followed by a grid of time slots as selectable chips. Sticky primary CTA 'Confirm Booking' at bottom."
+    },
+    {
+      "name": "Upload Records",
+      "purpose": "Patient tool to upload prescriptions and test results.",
+      "states": {
+        "loading": "Progress bar during file upload",
+        "empty": "Empty state illustration of a folder for 'No files uploaded yet'",
+        "error": "Upload failed toast"
+      },
+      "layout": "Large dashed-border dropzone area for 'Tap to upload (Camera/Gallery/PDF)'. Below it, a list of recently uploaded files with status indicators (Pending Review, Reviewed)."
+    },
+    {
+      "name": "My Appointments (Patient)",
+      "purpose": "List of past and upcoming appointments.",
+      "states": {
+        "loading": "Skeleton list rows",
+        "empty": "Illustration for no past appointments",
+        "error": "Failed to load history"
+      },
+      "layout": "Segmented control at top (Upcoming / Past). Clean vertical list of appointment cards showing Date, Doctor, Status (e.g., green 'Confirmed', blue 'Consultation Notes Ready')."
+    },
+    {
+      "name": "Doctor Dashboard",
+      "purpose": "Overview of today's queue and patients for the doctor.",
+      "states": {
+        "loading": "Skeleton queue list",
+        "empty": "Illustration 'No appointments today'",
+        "error": "Failed to load queue"
+      },
+      "layout": "Summary metrics at top (e.g., 12 Waiting, 4 Completed). Vertical list of patient cards containing Name, Time, UHID, and a quick action to 'View Details' or 'Start Consult'."
+    },
+    {
+      "name": "Patient Detail & Consultation (Doctor View)",
+      "purpose": "Doctor views patient history, uploaded files, and adds notes.",
+      "states": {
+        "loading": "Skeleton for patient data",
+        "empty": "No past records found",
+        "error": "Failed to load patient profile"
+      },
+      "layout": "Header with patient info and UHID. Tabbed view or stacked sections: 'Medical History', 'Uploaded Files (Grid view)', and a text area section to 'Add Consultation Notes / Reply'. Sticky CTA 'Save Notes'."
+    }
+  ],
+  "images": {
+    "logo_fallback": {
+      "url": "https://images.unsplash.com/photo-1762939079730-23708c0dd337?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1ODh8MHwxfHNlYXJjaHwxfHxtZWRpY2FsJTIwY2xpbmljJTIwbG9nbyUyMHRyYW5zcGFyZW50fGVufDB8fHx8MTc4OTUzODE1Nnww&ixlib=rb-4.1.0&q=85",
+      "alt": "Generic Medical Clinic Logo Transparent"
+    },
+    "doctor_profile_1": {
+      "url": "https://images.unsplash.com/photo-1637059824899-a441006a6875?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzN8MHwxfHNlYXJjaHwyfHxob21lb3BhdGh5JTIwZG9jdG9yfGVufDB8fHx8MTc4OTUzODE1Nnww&ixlib=rb-4.1.0&q=85",
+      "alt": "Doctor portrait with stethoscope"
+    },
+    "medical_abstract_bg": {
+      "url": "https://images.unsplash.com/photo-1603277578692-c699f37c67d3?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njl8MHwxfHNlYXJjaHwxfHxncmVlbiUyMG1lZGljYWwlMjBhYnN0cmFjdCUyMGJhY2tncm91bmR8ZW58MHx8fHwxNzg5NTM4MTU2fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Smooth green medical gradient background"
+    },
+    "medicine_hero": {
+      "url": "https://images.unsplash.com/photo-1725267882596-2d08e560b250?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2MDV8MHwxfHNlYXJjaHwxfHxob21lb3BhdGh5JTIwbWVkaWNpbmV8ZW58MHx8fHwxNzg5NTM4MTU2fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Homeopathy medicine bottles"
+    },
+    "pills_abstract": {
+      "url": "https://images.pexels.com/photos/9742856/pexels-photo-9742856.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Green and white pills on blue background"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Use '1 iOS-Native Clean' personality to ensure a trustworthy, clinical, and highly readable interface.",
+    "Implement the green (`#059669`) and blue (`#2563EB`) accent theme strictly as per the user choices, overriding the default ban on blue since it was explicitly requested.",
+    "Ensure all primary call-to-action buttons (like 'Confirm Booking' or 'Login') use `brandPrimary` (green) and are anchored via a sticky bottom container over scrolling content.",
+    "The Patient Home should prominently display the patient's generated UHID (Unique Health ID) at the top, perhaps as a `brandTertiary` tinted badge.",
+    "For the doctor's side, prioritize list scanning efficiency. Queue cards should have strong typographic hierarchy distinguishing Time, Name, and Status.",
+    "When placing text over the 'medical_abstract_bg' image (e.g., on Splash screen), ALWAYS apply the vertical gradient scrim (transparent to surfaceInverse) to guarantee WCAG contrast.",
+    "Use `Ionicons` consistently. Active tabs should use filled versions, while inactive tabs use outlined versions.",
+    "Follow iOS-native spacing rhythms: use generous padding (`lg` or `xl` for screen edges) and group related data with `md` gap.",
+    "Implement glassmorphism (`expo-blur`) for the bottom tab bar and sticky headers to provide elevated, premium feel."
+  ]
+}

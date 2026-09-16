@@ -1,0 +1,674 @@
+"""
+Agrawal Homeo Hall - Mobile App Backend
+Full-stack FastAPI service for patient/doctor portal with:
+- Google OAuth (Emergent managed) + Phone OTP (dev mode)
+- Role-based access (patient / doctor)
+- UHID generation for patients
+- Appointment booking
+- Prescription / test result uploads via Emergent Object Storage
+- Doctor consultation notes / replies
+"""
+from fastapi import FastAPI, APIRouter, HTTPException, Header, UploadFile, File, Form, Depends
+from fastapi.responses import Response
+from fastapi.concurrency import run_in_threadpool
+from dotenv import load_dotenv
+from starlette.middleware.cors import CORSMiddleware
+from motor.motor_asyncio import AsyncIOMotorClient
+import os
+import uuid
+import random
+import logging
+from pathlib import Path
+from pydantic import BaseModel, Field
+from typing import List, Optional, Literal
+from datetime import datetime, timedelta, timezone
+
+import httpx
+import requests
+
+ROOT_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / ".env")
+
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+mongo_url = os.environ["MONGO_URL"]
+DB_NAME = os.environ["DB_NAME"]
+EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY")
+APP_NAME = os.environ.get("APP_NAME", "agrawal-homeo-hall")
+
+STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com"
+STORAGE_URL = STORAGE_BASE.rstrip("/") + "/objstore/api/v1/storage"
+
+client = AsyncIOMotorClient(mongo_url)
+db = client[DB_NAME]
+
+app = FastAPI(title="Agrawal Homeo Hall API")
+api_router = APIRouter(prefix="/api")
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Storage helpers (Emergent Managed Object Storage)
+# ---------------------------------------------------------------------------
+storage_key: Optional[str] = None
+
+
+def init_storage_sync():
+    global storage_key
+    if storage_key:
+        return storage_key
+    if not EMERGENT_LLM_KEY:
+        raise RuntimeError("EMERGENT_LLM_KEY missing")
+    resp = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_LLM_KEY}, timeout=30)
+    resp.raise_for_status()
+    storage_key = resp.json()["storage_key"]
+    return storage_key
+
+
+def put_object_sync(path: str, data: bytes, content_type: str) -> dict:
+    key = init_storage_sync()
+    resp = requests.put(
+        f"{STORAGE_URL}/objects/{path}",
+        headers={"X-Storage-Key": key, "Content-Type": content_type},
+        data=data,
+        timeout=120,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def get_object_sync(path: str) -> tuple[bytes, str]:
+    global storage_key
+    key = init_storage_sync()
+    resp = requests.get(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key}, timeout=60)
+    if resp.status_code == 503:
+        storage_key = None
+        key = init_storage_sync()
+        resp = requests.get(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key}, timeout=60)
+    resp.raise_for_status()
+    return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
+
+
+# ---------------------------------------------------------------------------
+# Models
+# ---------------------------------------------------------------------------
+class User(BaseModel):
+    user_id: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    name: str
+    picture: Optional[str] = None
+    role: Literal["patient", "doctor"] = "patient"
+    uhid: Optional[str] = None
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    specialization: Optional[str] = None  # doctor
+    qualification: Optional[str] = None  # doctor
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class SessionRequest(BaseModel):
+    session_id: str
+
+
+class PhoneOtpRequest(BaseModel):
+    phone: str
+
+
+class PhoneOtpVerify(BaseModel):
+    phone: str
+    otp: str
+    name: Optional[str] = None
+    role: Literal["patient", "doctor"] = "patient"
+
+
+class RoleUpdate(BaseModel):
+    role: Literal["patient", "doctor"]
+    age: Optional[int] = None
+    gender: Optional[str] = None
+
+
+class AppointmentCreate(BaseModel):
+    doctor_id: str
+    date: str  # ISO date "YYYY-MM-DD"
+    time_slot: str  # "10:00 AM"
+    mode: Literal["in-clinic", "online"] = "in-clinic"
+    symptoms: str = ""
+
+
+class Appointment(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    patient_id: str
+    patient_name: str
+    patient_uhid: Optional[str] = None
+    doctor_id: str
+    doctor_name: str
+    date: str
+    time_slot: str
+    mode: str
+    symptoms: str
+    status: Literal["pending", "confirmed", "completed", "cancelled"] = "pending"
+    consultation_notes: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class FileRecord(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    patient_id: str
+    patient_name: str
+    patient_uhid: Optional[str] = None
+    filename: str
+    storage_path: str
+    content_type: str
+    size: int
+    category: Literal["prescription", "test_result", "other"] = "prescription"
+    note: str = ""
+    doctor_reply: Optional[str] = None
+    status: Literal["pending_review", "reviewed"] = "pending_review"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ConsultationNoteUpdate(BaseModel):
+    consultation_notes: str
+    status: Optional[Literal["pending", "confirmed", "completed", "cancelled"]] = None
+
+
+class FileReplyUpdate(BaseModel):
+    doctor_reply: str
+
+
+# ---------------------------------------------------------------------------
+# Auth helpers
+# ---------------------------------------------------------------------------
+async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    token = authorization.split(" ", 1)[1].strip()
+    session = await db.user_sessions.find_one({"session_token": token}, {"_id": 0})
+    if not session:
+        raise HTTPException(status_code=401, detail="Invalid session")
+    expires_at = session.get("expires_at")
+    if expires_at and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at and expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=401, detail="Session expired")
+    user = await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    return user
+
+
+async def require_role(role: str, user: dict) -> dict:
+    if user.get("role") != role:
+        raise HTTPException(status_code=403, detail=f"Requires {role} role")
+    return user
+
+
+# ---------------------------------------------------------------------------
+# UHID generator
+# ---------------------------------------------------------------------------
+async def generate_uhid() -> str:
+    year = datetime.now(timezone.utc).year
+    # Count existing UHIDs to give sequential id
+    while True:
+        candidate = f"AHH-{year}-{random.randint(10000, 99999)}"
+        existing = await db.users.find_one({"uhid": candidate}, {"_id": 0})
+        if not existing:
+            return candidate
+
+
+async def ensure_user_defaults(user: dict) -> dict:
+    """Populate UHID for patient users on first login."""
+    if user.get("role") == "patient" and not user.get("uhid"):
+        uhid = await generate_uhid()
+        await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"uhid": uhid}})
+        user["uhid"] = uhid
+    return user
+
+
+# ---------------------------------------------------------------------------
+# Startup / seed
+# ---------------------------------------------------------------------------
+@app.on_event("startup")
+async def on_startup():
+    await db.users.create_index("email", unique=True, sparse=True)
+    await db.users.create_index("phone", unique=True, sparse=True)
+    await db.users.create_index("user_id", unique=True)
+    await db.users.create_index("uhid", unique=True, sparse=True)
+    await db.user_sessions.create_index("session_token", unique=True)
+    await db.user_sessions.create_index("user_id")
+    await db.user_sessions.create_index("expires_at", expireAfterSeconds=0)
+    await db.appointments.create_index("patient_id")
+    await db.appointments.create_index("doctor_id")
+    await db.files.create_index("patient_id")
+
+    # Seed the clinic's doctor
+    doctor = await db.users.find_one({"email": "dr.sonima@agrawalhomeohall.com"}, {"_id": 0})
+    if not doctor:
+        await db.users.insert_one({
+            "user_id": f"user_{uuid.uuid4().hex[:12]}",
+            "email": "dr.sonima@agrawalhomeohall.com",
+            "phone": "+917294136264",
+            "name": "Dr. Sonima Agrawal",
+            "picture": "https://agrawalhomeohall.com/wp-content/uploads/2026/06/ChatGPT-Image-Jun-23-2026-11_17_26-AM-682x1024.png",
+            "role": "doctor",
+            "specialization": "Homeopathic Physician",
+            "qualification": "BHMS",
+            "created_at": datetime.now(timezone.utc),
+        })
+        logger.info("Seeded default doctor Dr. Sonima Agrawal")
+
+    # Initialize storage (non-fatal)
+    try:
+        await run_in_threadpool(init_storage_sync)
+        logger.info("Object storage initialized")
+    except Exception as e:
+        logger.warning(f"Storage init failed (will retry on demand): {e}")
+
+
+# ---------------------------------------------------------------------------
+# Health / static content
+# ---------------------------------------------------------------------------
+@api_router.get("/")
+async def root():
+    return {"message": "Agrawal Homeo Hall API", "status": "ok"}
+
+
+@api_router.get("/site/content")
+async def site_content():
+    """Static website content used by the mobile app (mirrors agrawalhomeohall.com)."""
+    return {
+        "clinic": {
+            "name": "Agrawal Homeo Hall",
+            "tagline": "Expert Homeopathic Care for Migraine, Thyroid, PCOS/PCOD, Skin Diseases & Family Health",
+            "phone": "+91-7294136264",
+            "whatsapp": "https://wa.me/917294136264",
+            "consultation_fee": 400,
+            "experience_years": 14,
+            "happy_patients": 2000,
+            "location": "Ranchi",
+        },
+        "doctor": {
+            "name": "Dr. Sonima Agrawal",
+            "qualification": "BHMS",
+            "experience": "14+ Years",
+            "bio": (
+                "Dr. Sonima Agrawal (BHMS) is a dedicated homeopathic physician committed to providing "
+                "personalized and compassionate healthcare for patients of all ages. With over 14 years of "
+                "clinical experience, she focuses on understanding the root cause of illness and creating "
+                "individualized treatment plans tailored to each patient's unique needs."
+            ),
+            "areas": [
+                "Migraine", "Thyroid disorders", "PCOS", "Skin diseases",
+                "Allergies", "Asthma", "Hair fall", "Child health",
+                "Digestive disorders", "Chronic health concerns",
+            ],
+        },
+        "services": [
+            {"title": "Migraine", "icon": "pulse", "desc": "Personalized homeopathic care to help reduce migraine frequency, severity, and improve overall quality of life."},
+            {"title": "Thyroid", "icon": "medical", "desc": "Comprehensive care to support thyroid health, hormonal balance, and overall wellness."},
+            {"title": "PCOS/PCOD & Infertility", "icon": "female", "desc": "Holistic treatment focused on hormonal balance and women's reproductive health."},
+            {"title": "Arthritis & Joint issues", "icon": "walk", "desc": "Natural homeopathic care to support joint health, mobility and long-term comfort."},
+            {"title": "Skin & Allergies", "icon": "sparkles", "desc": "Individualized care for healthier skin and long-term management of allergic conditions."},
+            {"title": "Asthma & Respiratory", "icon": "cloud", "desc": "Comprehensive care focused on respiratory health and symptom management."},
+            {"title": "Hair Fall / Alopecia", "icon": "cut", "desc": "Personalized treatment to reduce hair fall and promote healthier hair growth."},
+            {"title": "Autoimmune diseases", "icon": "shield-checkmark", "desc": "Dedicated care aimed at improving quality of life and managing autoimmune concerns."},
+            {"title": "Indigestion & Acidity", "icon": "restaurant", "desc": "Comprehensive care for gastrointestinal issues with a focus on lasting wellness."},
+            {"title": "Kidney Stones", "icon": "water", "desc": "Natural support for kidney stone concerns and maintaining urinary tract health."},
+            {"title": "Neurological Complaints", "icon": "flash", "desc": "Personalized homeopathic care to support neurological health and overall well-being."},
+            {"title": "Child & Family Care", "icon": "people", "desc": "Gentle care specially designed for children and daily health issues for all age groups."},
+        ],
+        "why_us": [
+            {"title": "Personalized Treatment", "desc": "Every patient receives a customized treatment plan."},
+            {"title": "Root Cause Approach", "desc": "We address the underlying cause of health concerns."},
+            {"title": "Experienced Care", "desc": "14+ years of compassionate clinical experience."},
+            {"title": "Online Consultation", "desc": "Consult from anywhere through online appointments."},
+            {"title": "Family Healthcare", "desc": "Care for children, women, adults and seniors."},
+            {"title": "Patient-Centered Care", "desc": "We listen carefully and support your wellness journey."},
+        ],
+        "testimonials": [
+            {"name": "Neha", "location": "Ranchi", "rating": 5, "text": "Absolutely the best homeopathic experience I've ever had. The doctor was gentle, patient, and made me feel completely at ease throughout my treatment."},
+            {"name": "Manju", "location": "Jamshedpur", "rating": 5, "text": "I was nervous before my visit, but her professional care and clear explanations put me instantly at comfort. My health has never been better!"},
+            {"name": "Kavita", "location": "Hazaribagh", "rating": 5, "text": "Her attention to detail and warm approach truly set her apart. Highly recommend."},
+        ],
+        "how_online_works": [
+            {"step": 1, "title": "Contact Us", "desc": "Call or WhatsApp us to book your consultation."},
+            {"step": 2, "title": "Share Your Concerns", "desc": "Tell us about your symptoms, medical history and health goals."},
+            {"step": 3, "title": "Online Consultation", "desc": "Consult directly with Dr. Sonima Agrawal from home."},
+            {"step": 4, "title": "Personalized Treatment", "desc": "Receive individualized treatment recommendations."},
+        ],
+    }
+
+
+@api_router.get("/doctors")
+async def list_doctors():
+    docs = await db.users.find({"role": "doctor"}, {"_id": 0}).to_list(50)
+    return docs
+
+
+# ---------------------------------------------------------------------------
+# Auth endpoints
+# ---------------------------------------------------------------------------
+def _mint_session_token(user_id: str) -> dict:
+    session_token = f"tok_{uuid.uuid4().hex}{uuid.uuid4().hex[:8]}"
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    return {"session_token": session_token, "user_id": user_id, "expires_at": expires_at,
+            "created_at": datetime.now(timezone.utc)}
+
+
+@api_router.post("/auth/session")
+async def auth_session(payload: SessionRequest):
+    """Exchange Emergent session_id for our session_token (Google OAuth flow)."""
+    session_id = payload.session_id
+    try:
+        async with httpx.AsyncClient(timeout=15) as ac:
+            resp = await ac.get(
+                "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
+                headers={"X-Session-ID": session_id},
+            )
+    except Exception as e:
+        logger.error(f"Auth exchange failed: {e}")
+        raise HTTPException(status_code=401, detail="Auth exchange failed")
+    if resp.status_code != 200:
+        raise HTTPException(status_code=401, detail="Invalid session_id")
+    data = resp.json()
+    email = data.get("email")
+    if not email:
+        raise HTTPException(status_code=401, detail="No email in Emergent response")
+
+    existing = await db.users.find_one({"email": email}, {"_id": 0})
+    if existing:
+        user_id = existing["user_id"]
+        user_doc = existing
+    else:
+        user_id = f"user_{uuid.uuid4().hex[:12]}"
+        user_doc = {
+            "user_id": user_id,
+            "email": email,
+            "name": data.get("name") or email.split("@")[0],
+            "picture": data.get("picture"),
+            "role": "patient",  # default; can be updated on first setup
+            "created_at": datetime.now(timezone.utc),
+        }
+        await db.users.insert_one({**user_doc})
+
+    user_doc = await ensure_user_defaults(user_doc)
+    session_row = _mint_session_token(user_id)
+    await db.user_sessions.insert_one({**session_row})
+
+    return {"session_token": session_row["session_token"], "user": user_doc}
+
+
+@api_router.post("/auth/otp/request")
+async def request_otp(payload: PhoneOtpRequest):
+    """DEV mode phone OTP. Returns the OTP in the response.
+    In production, replace with Twilio/MSG91."""
+    otp = f"{random.randint(100000, 999999)}"
+    await db.otp_codes.update_one(
+        {"phone": payload.phone},
+        {"$set": {"phone": payload.phone, "otp": otp,
+                  "expires_at": datetime.now(timezone.utc) + timedelta(minutes=10)}},
+        upsert=True,
+    )
+    logger.info(f"OTP for {payload.phone}: {otp}")
+    return {"success": True, "otp_dev": otp, "message": "OTP sent (dev mode returns OTP)"}
+
+
+@api_router.post("/auth/otp/verify")
+async def verify_otp(payload: PhoneOtpVerify):
+    row = await db.otp_codes.find_one({"phone": payload.phone}, {"_id": 0})
+    # Accept 123456 as universal dev OTP too
+    valid = False
+    if row and row.get("otp") == payload.otp:
+        exp = row.get("expires_at")
+        if exp and exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        if exp and exp >= datetime.now(timezone.utc):
+            valid = True
+    if payload.otp == "123456":
+        valid = True
+    if not valid:
+        raise HTTPException(status_code=401, detail="Invalid or expired OTP")
+
+    existing = await db.users.find_one({"phone": payload.phone}, {"_id": 0})
+    if existing:
+        user_id = existing["user_id"]
+        user_doc = existing
+    else:
+        user_id = f"user_{uuid.uuid4().hex[:12]}"
+        user_doc = {
+            "user_id": user_id,
+            "phone": payload.phone,
+            "name": payload.name or f"User {payload.phone[-4:]}",
+            "role": payload.role,
+            "created_at": datetime.now(timezone.utc),
+        }
+        await db.users.insert_one({**user_doc})
+
+    user_doc = await ensure_user_defaults(user_doc)
+    session_row = _mint_session_token(user_id)
+    await db.user_sessions.insert_one({**session_row})
+    await db.otp_codes.delete_one({"phone": payload.phone})
+    return {"session_token": session_row["session_token"], "user": user_doc}
+
+
+@api_router.get("/auth/me")
+async def auth_me(user: dict = Depends(get_current_user)):
+    user = await ensure_user_defaults(user)
+    return user
+
+
+@api_router.post("/auth/logout")
+async def logout(authorization: Optional[str] = Header(None)):
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ", 1)[1].strip()
+        await db.user_sessions.delete_one({"session_token": token})
+    return {"success": True}
+
+
+@api_router.post("/auth/role")
+async def update_role(payload: RoleUpdate, user: dict = Depends(get_current_user)):
+    """Set role after first Google login (patient/doctor)."""
+    update = {"role": payload.role}
+    if payload.age is not None:
+        update["age"] = payload.age
+    if payload.gender:
+        update["gender"] = payload.gender
+    await db.users.update_one({"user_id": user["user_id"]}, {"$set": update})
+    user.update(update)
+    user = await ensure_user_defaults(user)
+    return user
+
+
+# ---------------------------------------------------------------------------
+# Appointments
+# ---------------------------------------------------------------------------
+@api_router.post("/appointments", response_model=Appointment)
+async def create_appointment(payload: AppointmentCreate, user: dict = Depends(get_current_user)):
+    await require_role("patient", user)
+    doctor = await db.users.find_one({"user_id": payload.doctor_id, "role": "doctor"}, {"_id": 0})
+    if not doctor:
+        raise HTTPException(status_code=404, detail="Doctor not found")
+    appt = Appointment(
+        patient_id=user["user_id"],
+        patient_name=user.get("name", ""),
+        patient_uhid=user.get("uhid"),
+        doctor_id=doctor["user_id"],
+        doctor_name=doctor["name"],
+        date=payload.date,
+        time_slot=payload.time_slot,
+        mode=payload.mode,
+        symptoms=payload.symptoms,
+    )
+    await db.appointments.insert_one(appt.dict())
+    return appt
+
+
+@api_router.get("/appointments/mine", response_model=List[Appointment])
+async def my_appointments(user: dict = Depends(get_current_user)):
+    if user.get("role") == "doctor":
+        rows = await db.appointments.find({"doctor_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    else:
+        rows = await db.appointments.find({"patient_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return [Appointment(**r) for r in rows]
+
+
+@api_router.get("/appointments/{appt_id}", response_model=Appointment)
+async def get_appointment(appt_id: str, user: dict = Depends(get_current_user)):
+    row = await db.appointments.find_one({"id": appt_id}, {"_id": 0})
+    if not row:
+        raise HTTPException(status_code=404, detail="Not found")
+    if user["user_id"] not in (row["patient_id"], row["doctor_id"]):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return Appointment(**row)
+
+
+@api_router.patch("/appointments/{appt_id}", response_model=Appointment)
+async def update_appointment(appt_id: str, payload: ConsultationNoteUpdate,
+                              user: dict = Depends(get_current_user)):
+    await require_role("doctor", user)
+    row = await db.appointments.find_one({"id": appt_id}, {"_id": 0})
+    if not row:
+        raise HTTPException(status_code=404, detail="Not found")
+    if row["doctor_id"] != user["user_id"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    update = {"consultation_notes": payload.consultation_notes}
+    if payload.status:
+        update["status"] = payload.status
+    await db.appointments.update_one({"id": appt_id}, {"$set": update})
+    row.update(update)
+    return Appointment(**row)
+
+
+# ---------------------------------------------------------------------------
+# Files (prescription / test results)
+# ---------------------------------------------------------------------------
+@api_router.post("/files/upload", response_model=FileRecord)
+async def upload_file(
+    file: UploadFile = File(...),
+    category: str = Form("prescription"),
+    note: str = Form(""),
+    user: dict = Depends(get_current_user),
+):
+    await require_role("patient", user)
+    data = await file.read()
+    if len(data) > 15 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large (max 15 MB)")
+    ext = (file.filename or "file").rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else "bin"
+    path = f"{APP_NAME}/uploads/{user['user_id']}/{uuid.uuid4().hex}.{ext}"
+    content_type = file.content_type or "application/octet-stream"
+
+    try:
+        result = await run_in_threadpool(put_object_sync, path, data, content_type)
+    except Exception as e:
+        logger.error(f"Upload failed: {e}")
+        raise HTTPException(status_code=502, detail="Storage upload failed")
+
+    record = FileRecord(
+        patient_id=user["user_id"],
+        patient_name=user.get("name", ""),
+        patient_uhid=user.get("uhid"),
+        filename=file.filename or "file",
+        storage_path=result["path"],
+        content_type=content_type,
+        size=result.get("size", len(data)),
+        category=category if category in ("prescription", "test_result", "other") else "other",
+        note=note,
+    )
+    await db.files.insert_one(record.dict())
+    return record
+
+
+@api_router.get("/files/mine", response_model=List[FileRecord])
+async def my_files(user: dict = Depends(get_current_user)):
+    if user.get("role") == "doctor":
+        rows = await db.files.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    else:
+        rows = await db.files.find({"patient_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return [FileRecord(**r) for r in rows]
+
+
+@api_router.get("/files/patient/{patient_id}", response_model=List[FileRecord])
+async def files_for_patient(patient_id: str, user: dict = Depends(get_current_user)):
+    await require_role("doctor", user)
+    rows = await db.files.find({"patient_id": patient_id}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return [FileRecord(**r) for r in rows]
+
+
+@api_router.get("/files/{file_id}/content")
+async def file_content(file_id: str, token: Optional[str] = None,
+                       authorization: Optional[str] = Header(None)):
+    # Allow token via query for web <img> tags
+    bearer = authorization
+    if not bearer and token:
+        bearer = f"Bearer {token}"
+    user = await get_current_user(bearer)
+    row = await db.files.find_one({"id": file_id}, {"_id": 0})
+    if not row:
+        raise HTTPException(status_code=404, detail="Not found")
+    if user.get("role") != "doctor" and row["patient_id"] != user["user_id"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        content, ctype = await run_in_threadpool(get_object_sync, row["storage_path"])
+    except Exception as e:
+        logger.error(f"Storage read failed: {e}")
+        raise HTTPException(status_code=502, detail="Storage read failed")
+    return Response(content=content, media_type=ctype or row.get("content_type", "application/octet-stream"))
+
+
+@api_router.patch("/files/{file_id}/reply", response_model=FileRecord)
+async def reply_file(file_id: str, payload: FileReplyUpdate, user: dict = Depends(get_current_user)):
+    await require_role("doctor", user)
+    row = await db.files.find_one({"id": file_id}, {"_id": 0})
+    if not row:
+        raise HTTPException(status_code=404, detail="Not found")
+    update = {"doctor_reply": payload.doctor_reply, "status": "reviewed"}
+    await db.files.update_one({"id": file_id}, {"$set": update})
+    row.update(update)
+    return FileRecord(**row)
+
+
+# ---------------------------------------------------------------------------
+# Doctor - patients list
+# ---------------------------------------------------------------------------
+@api_router.get("/doctor/patients")
+async def doctor_patients(user: dict = Depends(get_current_user)):
+    await require_role("doctor", user)
+    rows = await db.users.find({"role": "patient"}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    # Enrich with appointment + file counts
+    for r in rows:
+        r["appointments_count"] = await db.appointments.count_documents({"patient_id": r["user_id"]})
+        r["files_count"] = await db.files.count_documents({"patient_id": r["user_id"]})
+    return rows
+
+
+@api_router.get("/doctor/patients/{patient_id}")
+async def doctor_patient_detail(patient_id: str, user: dict = Depends(get_current_user)):
+    await require_role("doctor", user)
+    patient = await db.users.find_one({"user_id": patient_id, "role": "patient"}, {"_id": 0})
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    appointments = await db.appointments.find({"patient_id": patient_id}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    files = await db.files.find({"patient_id": patient_id}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return {"patient": patient, "appointments": appointments, "files": files}
+
+
+# ---------------------------------------------------------------------------
+# Mount
+# ---------------------------------------------------------------------------
+app.include_router(api_router)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_credentials=True,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    client.close()
