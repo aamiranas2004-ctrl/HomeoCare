@@ -49,7 +49,10 @@ export default function DoctorRecords() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.name}>{f.patient_name} <Text style={styles.uhid}>({f.patient_uhid || "no uhid"})</Text></Text>
-                  <Text style={styles.meta}>{f.filename} • {f.category.replace("_", " ")}</Text>
+                  <Text style={styles.meta}>
+                    {f.family_member_name ? `For ${f.family_member_name} (${f.family_member_relation}) • ` : ""}
+                    {f.filename} • {f.category.replace("_", " ")}
+                  </Text>
                 </View>
                 <View style={[styles.chip, { backgroundColor: f.status === "reviewed" ? "#DBEAFE" : "#FEF3C7" }]}>
                   <Text style={[styles.chipTxt, { color: f.status === "reviewed" ? "#1D4ED8" : "#92400E" }]}>{f.status.replace("_", " ")}</Text>

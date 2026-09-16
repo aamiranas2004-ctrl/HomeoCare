@@ -96,6 +96,12 @@ export default function AppointmentsScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.doctor}>{a.doctor_name}</Text>
                     <Text style={styles.date}>{a.date} • {a.time_slot}</Text>
+                    {a.family_member_name ? (
+                      <View style={styles.familyRow}>
+                        <Icon name="people" size={10} color="#065F46" />
+                        <Text style={styles.familyTxt}>For {a.family_member_name} ({a.family_member_relation})</Text>
+                      </View>
+                    ) : null}
                   </View>
                   <View style={[styles.chip, { backgroundColor: statusColor(a.status) + "22", borderColor: statusColor(a.status) }]}>
                     <Text style={[styles.chipTxt, { color: statusColor(a.status) }]}>{a.status}</Text>
@@ -162,4 +168,9 @@ const useStyles = makeStyles((c) => ({
   replyBox: { backgroundColor: c.brandTertiary, borderRadius: radius.sm, padding: spacing.sm, marginTop: spacing.xs },
   replyLbl: { color: c.onBrandTertiary, fontSize: 11, fontWeight: "700", marginBottom: 2 },
   replyTxt: { color: c.onBrandTertiary, fontSize: 12 },
+  familyRow: {
+    flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: c.brandTertiary,
+    alignSelf: "flex-start", paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.pill, marginTop: 4,
+  },
+  familyTxt: { color: c.onBrandTertiary, fontSize: 10, fontWeight: "700", textTransform: "capitalize" },
 }));

@@ -38,6 +38,17 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        <Text style={styles.section}>Family</Text>
+        <Pressable
+          testID="family-btn"
+          style={styles.linkRow}
+          onPress={() => router.push("/family")}
+        >
+          <Icon name="people" size={18} color="#059669" />
+          <Text style={styles.linkTxt}>Family Profiles</Text>
+          <Icon name="chevron-forward" size={18} color="#94A3B8" style={{ marginLeft: "auto" }} />
+        </Pressable>
+
         <Text style={styles.section}>Clinic</Text>
         <Pressable
           testID="call-clinic-btn"

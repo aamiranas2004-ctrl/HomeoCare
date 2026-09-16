@@ -7,7 +7,7 @@ import { Stack, useRouter } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { makeStyles, spacing, radius } from "@/src/theme";
-import { apiJson } from "@/src/api";
+import { apiJson, useAuth } from "@/src/api";
 
 const TIME_SLOTS = [
   "09:00 AM", "09:30 AM", "10:00 AM", "10:30 AM", "11:00 AM", "11:30 AM",
@@ -33,12 +33,15 @@ export default function BookScreen() {
   const styles = useStyles();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   const [doctors, setDoctors] = useState<any[]>([]);
   const [doctorId, setDoctorId] = useState<string | null>(null);
   const [date, setDate] = useState<Date>(new Date());
   const [slot, setSlot] = useState<string>(TIME_SLOTS[0]);
   const [mode, setMode] = useState<"in-clinic" | "online">("in-clinic");
   const [symptoms, setSymptoms] = useState("");
+  const [family, setFamily] = useState<any[]>([]);
+  const [forWhom, setForWhom] = useState<string>("self"); // "self" or family member id
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
@@ -48,6 +51,7 @@ export default function BookScreen() {
       setDoctors(d);
       if (d[0]) setDoctorId(d[0].user_id);
     });
+    apiJson<any[]>("/family").then(setFamily).catch(() => {});
   }, []);
 
   const days = useMemo(() => nextDays(14), []);
@@ -65,6 +69,7 @@ export default function BookScreen() {
           time_slot: slot,
           mode,
           symptoms,
+          family_member_id: forWhom === "self" ? undefined : forWhom,
         }),
       });
       setOk(true);
@@ -89,6 +94,61 @@ export default function BookScreen() {
 
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 120, gap: spacing.md }} keyboardShouldPersistTaps="handled">
+          {/* For Whom */}
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.sm }}>
+            <Text style={styles.section}>Booking For</Text>
+            <Pressable testID="manage-family-btn" onPress={() => router.push("/family")} hitSlop={8}>
+              <Text style={{ color: "#2563EB", fontSize: 12, fontWeight: "700" }}>Manage family →</Text>
+            </Pressable>
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm }}>
+            <Pressable
+              testID="for-self"
+              onPress={() => setForWhom("self")}
+              style={[styles.forWhom, forWhom === "self" && styles.forWhomActive, { flexShrink: 0 }]}
+            >
+              <Icon name="person" size={16} color={forWhom === "self" ? "#FFFFFF" : "#334155"} />
+              <Text style={[styles.forWhomTxt, forWhom === "self" && styles.forWhomTxtActive]}>
+                Myself
+              </Text>
+              {user?.uhid && (
+                <Text style={[styles.forWhomHint, forWhom === "self" && { color: "rgba(255,255,255,0.85)" }]}>
+                  {user.uhid}
+                </Text>
+              )}
+            </Pressable>
+            {family.map((f) => (
+              <Pressable
+                key={f.id}
+                testID={`for-${f.id}`}
+                onPress={() => setForWhom(f.id)}
+                style={[styles.forWhom, forWhom === f.id && styles.forWhomActive, { flexShrink: 0 }]}
+              >
+                <Icon
+                  name={f.relation === "spouse" ? "heart" : f.relation === "child" ? "happy" : f.relation === "parent" ? "people" : "person-add"}
+                  size={16}
+                  color={forWhom === f.id ? "#FFFFFF" : "#334155"}
+                />
+                <View>
+                  <Text style={[styles.forWhomTxt, forWhom === f.id && styles.forWhomTxtActive]}>
+                    {f.name}
+                  </Text>
+                  <Text style={[styles.forWhomHint, forWhom === f.id && { color: "rgba(255,255,255,0.85)" }]}>
+                    {f.relation}{f.age ? ` • ${f.age}y` : ""}
+                  </Text>
+                </View>
+              </Pressable>
+            ))}
+            <Pressable
+              testID="add-family-inline"
+              onPress={() => router.push("/family")}
+              style={[styles.forWhom, styles.addMore, { flexShrink: 0 }]}
+            >
+              <Icon name="add" size={16} color="#059669" />
+              <Text style={{ color: "#059669", fontWeight: "700", fontSize: 12 }}>Add member</Text>
+            </Pressable>
+          </ScrollView>
+
           {/* Doctor */}
           <Text style={styles.section}>Select Doctor</Text>
           {doctors.map((d) => (
@@ -275,4 +335,15 @@ const useStyles = makeStyles((c) => ({
   },
   confirm: { backgroundColor: c.brandPrimary, borderRadius: radius.pill, paddingVertical: 16, alignItems: "center" },
   confirmTxt: { color: c.onBrandPrimary, fontWeight: "700", fontSize: 15 },
+
+  forWhom: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    paddingHorizontal: 14, paddingVertical: 10, borderRadius: radius.md,
+    backgroundColor: c.surfaceSecondary, borderWidth: 1, borderColor: c.border, minWidth: 130,
+  },
+  forWhomActive: { backgroundColor: c.brandPrimary, borderColor: c.brandPrimary },
+  forWhomTxt: { color: c.onSurface, fontSize: 13, fontWeight: "700" },
+  forWhomTxtActive: { color: c.onBrandPrimary },
+  forWhomHint: { color: c.muted, fontSize: 10, textTransform: "capitalize" },
+  addMore: { borderStyle: "dashed", borderColor: c.brandPrimary, backgroundColor: c.brandTertiary },
 }));

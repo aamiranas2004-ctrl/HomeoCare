@@ -81,6 +81,9 @@ export default function DoctorQueue() {
                     <Text style={styles.pMeta}>
                       {a.patient_uhid || "No UHID"} • {a.date} • {a.time_slot}
                     </Text>
+                    {a.family_member_name ? (
+                      <Text style={styles.pFam}>For {a.family_member_name} ({a.family_member_relation})</Text>
+                    ) : null}
                   </View>
                   <View style={[styles.chip, {
                     backgroundColor: a.status === "completed" ? "#DBEAFE" : a.status === "confirmed" ? "#D1FAE5" : "#FEF3C7",
@@ -184,6 +187,7 @@ const useStyles = makeStyles((c) => ({
   cardHead: { flexDirection: "row", alignItems: "center" },
   pName: { color: c.onSurface, fontWeight: "700", fontSize: 15 },
   pMeta: { color: c.muted, fontSize: 11, marginTop: 2 },
+  pFam: { color: c.onBrandTertiary, fontSize: 10, fontWeight: "700", backgroundColor: c.brandTertiary, alignSelf: "flex-start", paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.pill, marginTop: 4, textTransform: "capitalize" },
   chip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.pill },
   chipTxt: { fontSize: 11, fontWeight: "700", textTransform: "capitalize" },
 

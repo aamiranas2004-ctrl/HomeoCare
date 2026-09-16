@@ -150,10 +150,10 @@ export default function PatientHome() {
             onPress={() => router.push("/(patient)/uploads")}
           />
           <QuickAction
-            icon="chatbubbles"
-            label="Doctor Replies"
-            testID="qa-replies"
-            onPress={() => router.push("/(patient)/uploads")}
+            icon="people"
+            label="Family"
+            testID="qa-family"
+            onPress={() => router.push("/family")}
           />
           <QuickAction
             icon="call"

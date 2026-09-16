@@ -45,6 +45,14 @@ portal that the website itself does not have.
 - `otp_codes`: transient phone→OTP records with 10-min expiry.
 
 ## Known simplifications (upgrade in later iterations)
-- Phone OTP is **dev mode** (OTP returned in response). Swap to Twilio/MSG91 for prod.
+- Phone OTP is **dev mode** (OTP returned in response). MSG91 signup pending — will wire up when API keys arrive.
 - Single doctor seeded (Dr. Sonima). Multi-doctor is supported by the schema.
 - No push notifications yet (must be requested by user; requires build).
+
+## Family Profiles (v2)
+- One account can manage bookings & records for multiple family members (spouse/child/parent/sibling/other).
+- Each member has: name, relation, age, gender, blood group, allergies.
+- **Each family member gets their own unique UHID** — auto-generated on add, checked for uniqueness against both primary users and other family entries.
+- Book Appointment and Upload Records screens include a horizontal "Booking For" picker (Myself + all family members).
+- Doctor's Patient Detail view now shows the patient's family members and their UHIDs; appointments/records display "For [member name] ([relation])" badges throughout the app.
+- Endpoints: `GET/POST /api/family`, `PATCH/DELETE /api/family/{id}`. Passing `family_member_id` to `/api/appointments` or `/api/files/upload` (multipart) populates the family fields on the record.

@@ -12,8 +12,10 @@ import { API, apiJson, useAuth } from "@/src/api";
 
 export default function UploadsScreen() {
   const styles = useStyles();
-  const { getStoredToken } = useAuth();
+  const { getStoredToken, user } = useAuth();
   const [items, setItems] = useState<any[]>([]);
+  const [family, setFamily] = useState<any[]>([]);
+  const [forWhom, setForWhom] = useState<string>("self");
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -22,8 +24,12 @@ export default function UploadsScreen() {
 
   const load = async () => {
     try {
-      const data = await apiJson<any[]>("/files/mine");
+      const [data, fam] = await Promise.all([
+        apiJson<any[]>("/files/mine"),
+        apiJson<any[]>("/family").catch(() => []),
+      ]);
       setItems(data);
+      setFamily(fam || []);
     } catch {} finally {
       setLoading(false);
     }
@@ -44,6 +50,7 @@ export default function UploadsScreen() {
         form.append("file", { uri, name: filename, type: mime } as any);
       }
       form.append("category", category);
+      if (forWhom !== "self") form.append("family_member_id", forWhom);
       const res = await fetch(`${API}/files/upload`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
@@ -121,6 +128,39 @@ export default function UploadsScreen() {
         contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxxl }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
+        {/* Family selector */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: spacing.sm, paddingRight: spacing.lg }}
+        >
+          <Pressable
+            testID="for-self"
+            onPress={() => setForWhom("self")}
+            style={[styles.forWhom, forWhom === "self" && styles.forWhomActive, { flexShrink: 0 }]}
+          >
+            <Icon name="person" size={14} color={forWhom === "self" ? "#FFFFFF" : "#334155"} />
+            <Text style={[styles.forWhomTxt, forWhom === "self" && styles.forWhomTxtActive]}>
+              Myself
+            </Text>
+          </Pressable>
+          {family.map((f) => (
+            <Pressable
+              key={f.id}
+              testID={`for-${f.id}`}
+              onPress={() => setForWhom(f.id)}
+              style={[styles.forWhom, forWhom === f.id && styles.forWhomActive, { flexShrink: 0 }]}
+            >
+              <Icon
+                name={f.relation === "spouse" ? "heart" : f.relation === "child" ? "happy" : f.relation === "parent" ? "people" : "person-add"}
+                size={14}
+                color={forWhom === f.id ? "#FFFFFF" : "#334155"}
+              />
+              <Text style={[styles.forWhomTxt, forWhom === f.id && styles.forWhomTxtActive]}>{f.name}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+
         {/* Category chips */}
         <ScrollView
           horizontal
@@ -182,6 +222,7 @@ export default function UploadsScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.fileName} numberOfLines={1}>{f.filename}</Text>
                 <Text style={styles.fileMeta}>
+                  {f.family_member_name ? `👤 ${f.family_member_name} • ` : ""}
                   {f.category.replace("_", " ")} • {new Date(f.created_at).toLocaleDateString()}
                 </Text>
                 {f.doctor_reply ? (
@@ -258,4 +299,13 @@ const useStyles = makeStyles((c) => ({
   replyBox: { backgroundColor: c.brandTertiary, borderRadius: radius.sm, padding: spacing.sm, marginTop: 6 },
   replyLbl: { color: c.onBrandTertiary, fontSize: 11, fontWeight: "700" },
   replyTxt: { color: c.onBrandTertiary, fontSize: 12, marginTop: 2 },
+
+  forWhom: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.pill,
+    backgroundColor: c.surfaceSecondary, borderWidth: 1, borderColor: c.border,
+  },
+  forWhomActive: { backgroundColor: c.brandPrimary, borderColor: c.brandPrimary },
+  forWhomTxt: { color: c.onSurface, fontSize: 12, fontWeight: "600" },
+  forWhomTxtActive: { color: c.onBrandPrimary },
 }));

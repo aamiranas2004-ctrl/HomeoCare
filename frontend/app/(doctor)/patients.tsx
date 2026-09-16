@@ -65,9 +65,27 @@ export default function DoctorPatients() {
               <View key={a.id} style={styles.item}>
                 <Text style={styles.itemTitle}>{a.date} • {a.time_slot}</Text>
                 <Text style={styles.itemMeta}>{a.mode} • {a.status}</Text>
+                {a.family_member_name ? (
+                  <Text style={styles.itemFam}>👤 For {a.family_member_name} ({a.family_member_relation})</Text>
+                ) : null}
                 {a.symptoms ? <Text style={styles.itemSym}>{a.symptoms}</Text> : null}
               </View>
             ))}
+
+            {detail.family_members && detail.family_members.length > 0 && (
+              <>
+                <Text style={styles.section}>Family Members ({detail.family_members.length})</Text>
+                {detail.family_members.map((f: any) => (
+                  <View key={f.id} style={styles.item}>
+                    <Text style={styles.itemTitle}>{f.name} <Text style={styles.itemMeta}>({f.relation})</Text></Text>
+                    <Text style={styles.itemMeta}>
+                      UHID: {f.uhid}{f.age ? ` • ${f.age}y` : ""}{f.gender ? ` • ${f.gender}` : ""}{f.blood_group ? ` • ${f.blood_group}` : ""}
+                    </Text>
+                    {f.allergies ? <Text style={styles.itemSym}><Text style={{ fontWeight: "700" }}>Allergies: </Text>{f.allergies}</Text> : null}
+                  </View>
+                ))}
+              </>
+            )}
 
             <Text style={styles.section}>Uploaded Records ({detail.files.length})</Text>
             {detail.files.length === 0 ? (
@@ -210,6 +228,7 @@ const useStyles = makeStyles((c) => ({
   item: { backgroundColor: c.surfaceSecondary, padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: c.border, gap: 4 },
   itemTitle: { color: c.onSurface, fontWeight: "700", fontSize: 13 },
   itemMeta: { color: c.muted, fontSize: 11 },
+  itemFam: { color: c.onBrandTertiary, fontSize: 11, fontWeight: "700", backgroundColor: c.brandTertiary, alignSelf: "flex-start", paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.pill, marginTop: 4 },
   itemSym: { color: c.onSurfaceSecondary, fontSize: 12, marginTop: 4 },
 
   replyArea: { minHeight: 60, backgroundColor: c.surface, borderRadius: radius.md, padding: 10, color: c.onSurface, textAlignVertical: "top", borderWidth: 1, borderColor: c.border },

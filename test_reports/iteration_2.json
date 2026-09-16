@@ -1,0 +1,45 @@
+{
+  "summary": "Backend-only iteration 2 testing for Agrawal Homeo Hall - Family Profiles feature. Added /app/backend/tests/test_family_profiles.py with 21 new tests covering /api/family CRUD (list/create/patch/delete), RBAC (patient-only, doctor 403, 401 without bearer), UHID auto-generation & uniqueness across primary+members, cross-user 404 on patch, unknown-id 404 on patch/delete, appointment creation with family_member_id populating name+relation, appointment with null family_member_id keeping fields null, unknown family_member_id 404 on both appointment and file upload, POST /api/files/upload multipart with family_member_id, and doctor patient-detail response now including family_members list (empty + non-empty). Ran full backend suite: 61/61 PASSED (40 iter-1 regression + 21 iter-2 family) in ~8.5s serial. UHID format AHH-YYYY-NNNNN confirmed for both primary user and each family member and all UHIDs are distinct.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "PATCH /api/family/{id}", "issue": "Uses FamilyMemberCreate (all fields), so a PATCH acts like a PUT and requires client to send all fields. If a client only sends {name} the other Optional fields are set to null which silently wipes age/gender/blood_group/allergies. Consider a dedicated FamilyMemberUpdate model with all-Optional + exclude_unset in the $set."},
+      {"endpoint": "POST /api/family", "issue": "No validation that a patient can only have one member with relation='self'. Currently a patient can create multiple 'self' family entries (each with their own UHID). Consider enforcing uniqueness or deriving 'self' from the primary user account."},
+      {"endpoint": "GET /api/doctor/patients", "issue": "Enrichment loop does N sequential count_documents per patient (was flagged iter 1); with family_members now surfaced in detail, consider adding family_count too and/or aggregate pipeline for scale."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_family_profiles.py",
+    "/app/backend/tests/test_agrawal_homeo_backend.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/pytest/family_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Add FamilyMemberUpdate with all-Optional fields + $set exclude_unset to make PATCH /api/family/{id} a true partial update.",
+    "(Optional) Prevent multiple 'self' relations per account, or auto-mirror the primary user as an implicit 'self' family entry.",
+    "(Optional) Add family_count to /api/doctor/patients enrichment and consider a single aggregate for appointments/files/family counts."
+  ],
+  "critical_code_review_comments": [
+    "server.py grew from 675 -> 779 lines; family endpoints are still cleanly grouped but the file is over the 700-line threshold, splitting into modules (auth.py, appointments.py, files.py, family.py, storage.py) is now warranted.",
+    "generate_uhid() only checks db.users.uhid for collision, not db.family_members.uhid - could theoretically issue a UHID to a family member that already exists on another family member. In practice the 90k space + tests show no collision, but the uniqueness check should also query family_members (or a dedicated uhid_registry collection).",
+    "family_members collection has index on 'id' and 'account_id' - good. Consider also indexing 'uhid' unique to enforce global UHID uniqueness at the DB level.",
+    "PATCH /api/family/{id} 404s across users (never leaks existence) - correct.",
+    "MongoDB _id excluded via projection {'_id': 0} everywhere including new family routes - good."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_family_profiles.py (new)"
+  ],
+  "success_rate": {"backend": "100% (61/61)", "frontend": "not_tested"},
+  "seed_data_creation": "test_family_profiles.py creates several TEST_ patients per run using random phones +91994xxxxxxx and universal OTP 123456. Each test creates its own patient(s) to keep tests isolated. All records prefixed with 'TEST' in names/notes. No production data touched. Seeded doctor Dr. Sonima Agrawal is reused for doctor-side tests.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend fully green (61/61). test_family_profiles.py is standalone (uses conftest.py fixtures + creates its own fresh patients per test) and safe to run in parallel with test_agrawal_homeo_backend.py. Run serial with `-n 0` to avoid xdist artifacts. Public URL: EXPO_PUBLIC_BACKEND_URL from /app/frontend/.env. Universal OTP 123456 always works. Family model: FamilyMemberCreate (name, relation, age, gender, blood_group, allergies) + auto-added id/account_id/uhid/created_at on POST. UHID format AHH-YYYY-NNNNN.",
+  "rca_of_issue": "N/A - feature works as specified in the review request. All 13 listed behaviors verified plus additional edge cases (cross-user isolation on PATCH, multiple UHID uniqueness)."
+}

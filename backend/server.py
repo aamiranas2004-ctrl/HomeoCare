@@ -136,6 +136,7 @@ class AppointmentCreate(BaseModel):
     time_slot: str  # "10:00 AM"
     mode: Literal["in-clinic", "online"] = "in-clinic"
     symptoms: str = ""
+    family_member_id: Optional[str] = None  # book on behalf of a family member
 
 
 class Appointment(BaseModel):
@@ -143,6 +144,9 @@ class Appointment(BaseModel):
     patient_id: str
     patient_name: str
     patient_uhid: Optional[str] = None
+    family_member_id: Optional[str] = None
+    family_member_name: Optional[str] = None
+    family_member_relation: Optional[str] = None
     doctor_id: str
     doctor_name: str
     date: str
@@ -159,6 +163,9 @@ class FileRecord(BaseModel):
     patient_id: str
     patient_name: str
     patient_uhid: Optional[str] = None
+    family_member_id: Optional[str] = None
+    family_member_name: Optional[str] = None
+    family_member_relation: Optional[str] = None
     filename: str
     storage_path: str
     content_type: str
@@ -177,6 +184,22 @@ class ConsultationNoteUpdate(BaseModel):
 
 class FileReplyUpdate(BaseModel):
     doctor_reply: str
+
+
+class FamilyMemberCreate(BaseModel):
+    name: str
+    relation: Literal["self", "spouse", "child", "parent", "sibling", "other"] = "other"
+    age: Optional[int] = None
+    gender: Optional[Literal["male", "female", "other"]] = None
+    blood_group: Optional[str] = None
+    allergies: Optional[str] = None
+
+
+class FamilyMember(FamilyMemberCreate):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    account_id: str  # primary account user_id
+    uhid: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # ---------------------------------------------------------------------------
@@ -214,8 +237,9 @@ async def generate_uhid() -> str:
     # Count existing UHIDs to give sequential id
     while True:
         candidate = f"AHH-{year}-{random.randint(10000, 99999)}"
-        existing = await db.users.find_one({"uhid": candidate}, {"_id": 0})
-        if not existing:
+        existing_user = await db.users.find_one({"uhid": candidate}, {"_id": 0})
+        existing_fam = await db.family_members.find_one({"uhid": candidate}, {"_id": 0})
+        if not existing_user and not existing_fam:
             return candidate
 
 
@@ -243,6 +267,8 @@ async def on_startup():
     await db.appointments.create_index("patient_id")
     await db.appointments.create_index("doctor_id")
     await db.files.create_index("patient_id")
+    await db.family_members.create_index("account_id")
+    await db.family_members.create_index("id", unique=True)
 
     # Seed the clinic's doctor
     doctor = await db.users.find_one({"email": "dr.sonima@agrawalhomeohall.com"}, {"_id": 0})
@@ -491,10 +517,27 @@ async def create_appointment(payload: AppointmentCreate, user: dict = Depends(ge
     doctor = await db.users.find_one({"user_id": payload.doctor_id, "role": "doctor"}, {"_id": 0})
     if not doctor:
         raise HTTPException(status_code=404, detail="Doctor not found")
+
+    fm_id = None
+    fm_name = None
+    fm_relation = None
+    if payload.family_member_id:
+        fm = await db.family_members.find_one(
+            {"id": payload.family_member_id, "account_id": user["user_id"]}, {"_id": 0}
+        )
+        if not fm:
+            raise HTTPException(status_code=404, detail="Family member not found")
+        fm_id = fm["id"]
+        fm_name = fm["name"]
+        fm_relation = fm.get("relation")
+
     appt = Appointment(
         patient_id=user["user_id"],
         patient_name=user.get("name", ""),
         patient_uhid=user.get("uhid"),
+        family_member_id=fm_id,
+        family_member_name=fm_name,
+        family_member_relation=fm_relation,
         doctor_id=doctor["user_id"],
         doctor_name=doctor["name"],
         date=payload.date,
@@ -550,6 +593,7 @@ async def upload_file(
     file: UploadFile = File(...),
     category: str = Form("prescription"),
     note: str = Form(""),
+    family_member_id: Optional[str] = Form(None),
     user: dict = Depends(get_current_user),
 ):
     await require_role("patient", user)
@@ -559,6 +603,19 @@ async def upload_file(
     ext = (file.filename or "file").rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else "bin"
     path = f"{APP_NAME}/uploads/{user['user_id']}/{uuid.uuid4().hex}.{ext}"
     content_type = file.content_type or "application/octet-stream"
+
+    fm_name = None
+    fm_relation = None
+    fm_id = None
+    if family_member_id:
+        fm = await db.family_members.find_one(
+            {"id": family_member_id, "account_id": user["user_id"]}, {"_id": 0}
+        )
+        if not fm:
+            raise HTTPException(status_code=404, detail="Family member not found")
+        fm_id = fm["id"]
+        fm_name = fm["name"]
+        fm_relation = fm.get("relation")
 
     try:
         result = await run_in_threadpool(put_object_sync, path, data, content_type)
@@ -570,6 +627,9 @@ async def upload_file(
         patient_id=user["user_id"],
         patient_name=user.get("name", ""),
         patient_uhid=user.get("uhid"),
+        family_member_id=fm_id,
+        family_member_name=fm_name,
+        family_member_relation=fm_relation,
         filename=file.filename or "file",
         storage_path=result["path"],
         content_type=content_type,
@@ -652,7 +712,52 @@ async def doctor_patient_detail(patient_id: str, user: dict = Depends(get_curren
         raise HTTPException(status_code=404, detail="Patient not found")
     appointments = await db.appointments.find({"patient_id": patient_id}, {"_id": 0}).sort("created_at", -1).to_list(200)
     files = await db.files.find({"patient_id": patient_id}, {"_id": 0}).sort("created_at", -1).to_list(200)
-    return {"patient": patient, "appointments": appointments, "files": files}
+    family_members = await db.family_members.find({"account_id": patient_id}, {"_id": 0}).sort("created_at", 1).to_list(50)
+    return {"patient": patient, "appointments": appointments, "files": files, "family_members": family_members}
+
+
+# ---------------------------------------------------------------------------
+# Family Members
+# ---------------------------------------------------------------------------
+@api_router.get("/family", response_model=List[FamilyMember])
+async def list_family(user: dict = Depends(get_current_user)):
+    await require_role("patient", user)
+    rows = await db.family_members.find({"account_id": user["user_id"]}, {"_id": 0}).sort("created_at", 1).to_list(50)
+    return [FamilyMember(**r) for r in rows]
+
+
+@api_router.post("/family", response_model=FamilyMember)
+async def add_family(payload: FamilyMemberCreate, user: dict = Depends(get_current_user)):
+    await require_role("patient", user)
+    uhid = await generate_uhid()
+    member = FamilyMember(
+        account_id=user["user_id"],
+        uhid=uhid,
+        **payload.dict(),
+    )
+    await db.family_members.insert_one(member.dict())
+    return member
+
+
+@api_router.patch("/family/{member_id}", response_model=FamilyMember)
+async def update_family(member_id: str, payload: FamilyMemberCreate, user: dict = Depends(get_current_user)):
+    await require_role("patient", user)
+    row = await db.family_members.find_one({"id": member_id, "account_id": user["user_id"]}, {"_id": 0})
+    if not row:
+        raise HTTPException(status_code=404, detail="Family member not found")
+    update = payload.dict()
+    await db.family_members.update_one({"id": member_id}, {"$set": update})
+    row.update(update)
+    return FamilyMember(**row)
+
+
+@api_router.delete("/family/{member_id}")
+async def delete_family(member_id: str, user: dict = Depends(get_current_user)):
+    await require_role("patient", user)
+    res = await db.family_members.delete_one({"id": member_id, "account_id": user["user_id"]})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Family member not found")
+    return {"success": True}
 
 
 # ---------------------------------------------------------------------------
