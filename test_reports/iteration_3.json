@@ -1,0 +1,48 @@
+{
+  "summary": "Backend-only iteration 3 for MSG91 SMS OTP integration in dev-fallback mode (AUTHKEY set, TEMPLATE_ID intentionally empty pending DLT approval). Added /app/backend/tests/test_msg91_otp.py with 14 new tests covering: provider='dev' response field, otp_dev + universal 123456 fallback, phone normalization (bare 10-digit → +91XXXXXXXXXX, '00' prefix stripped, '+' preserved, whitespace/dashes stripped), invalid phone rejection (letters, <10 digits, empty → 400), verify with returned otp_dev, verify with wrong OTP → 401, /auth/me works after normalized-phone login, and idempotent login with two phone formats resolves to the same user_id. Full suite = 75 tests (40 iter1 + 21 iter2 + 14 iter3), 75/75 PASS serially in 8.6s. Startup log verified: 'MSG91 disabled (no TEMPLATE_ID (waiting on DLT approval)). Using dev-mode OTP with 123456 fallback.'. All previously-passing regression tests still pass. NOTE on parallel xdist run: 74/75 pass under -n 2; the single flake is a pre-existing cross-worker fixture-scope artifact in TestDoctorPatients.test_doctor_patients_list (session-scoped patient_session on gw1 has no file uploaded because TestFiles ran on gw0's patient), not a regression from MSG91 changes.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/auth/otp/request (normalization branch)", "issue": "server.py:458 uses `raw if len(raw) > 10 else f\"{MSG91_DEFAULT_CC}{raw}\"` — for raw of exactly length 11 (unusual but possible, e.g. leading digit like '91XXXXXXXXXX' typed without '+'), the CC is NOT prepended, which is the right behavior for pre-CC'd 91XXXXXXXXXX but silently keeps arbitrary 11-digit garbage. Consider validating length ∈ {10, 12} when no '+' or '00' was given, or explicitly detect a leading '91' before deciding."},
+      {"endpoint": "POST /api/auth/otp/request", "issue": "In DEV mode the endpoint returns the raw `otp_dev` in the response body. This is intentional for testing, but consider gating it behind an explicit APP_ENV=dev flag before shipping to production so a mis-configured prod (missing TEMPLATE_ID) doesn't leak OTPs to callers."},
+      {"endpoint": "POST /api/auth/otp/verify (MSG91 branch)", "issue": "server.py:540-557 — when provider=='msg91' but the OTP row has expired, the code correctly rejects. However there is no path that lets a caller retry via 123456 after an msg91 send actually succeeded and the user typed a wrong OTP: the code first sets valid=True on '123456' before hitting the row-based branch, so this is fine. Noting for completeness — behavior is correct."},
+      {"endpoint": "POST /api/auth/otp/verify", "issue": "Universal fallback '123456' works even when NO prior /request was made. Documented + intentional per credentials file, but flagged so it isn't lost in production."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_msg91_otp.py",
+    "/app/backend/tests/test_agrawal_homeo_backend.py",
+    "/app/backend/tests/test_family_profiles.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/iteration_3_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Gate the `otp_dev` field in /auth/otp/request behind an explicit APP_ENV=dev flag so a production instance with a missing TEMPLATE_ID does not leak OTPs.",
+    "(Optional) Tighten phone-normalization: explicitly detect leading '91' vs. arbitrary 11-digit input; today `len(raw) > 10` treats any 11-digit number as pre-CC'd.",
+    "(Optional, pre-existing) Fix the xdist cross-worker flake in TestDoctorPatients.test_doctor_patients_list — the session-scoped patient_session fixture is created independently on each worker so it can drift from TestFiles' upload; either move that suite to a single worker (loadfile scope already, but the assertion `files_count >= 1` on the doctor's global patient list depends on which worker's patient_session got the file). Serial run (`-n 0`) is 75/75 green."
+  ],
+  "critical_code_review_comments": [
+    "server.py now 883 lines — still over the 700-line split threshold noted last iteration; MSG91 branching adds ~40 lines to the OTP handlers. Recommend moving auth into /app/backend/routers/auth.py.",
+    "Duplicate normalization block in request_otp (l.450-461) and verify_otp (l.517-524) — extract `_normalize_phone(raw) -> (digits, stored_phone)` helper to avoid drift.",
+    "MSG91 API calls use `params=...` with POST which sends them as query string — that matches MSG91's v5 OTP API contract, so it's correct, just non-obvious; consider a short comment.",
+    "MSG91_ENABLED is evaluated once at import time. Rotating TEMPLATE_ID in .env requires a backend restart (documented by supervisor rules, but worth noting).",
+    "requests library is used synchronously inside async endpoints but is correctly wrapped in run_in_threadpool — good.",
+    "MongoDB _id excluded via projection {'_id': 0} everywhere including new otp_codes collection reads — good.",
+    "No index on otp_codes.phone or otp_codes.expires_at; consider TTL index on expires_at to auto-purge stale codes."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_msg91_otp.py (new, 14 tests)"
+  ],
+  "success_rate": {"backend": "100% (75/75 serial) / 98.7% (74/75 parallel due to pre-existing xdist flake)", "frontend": "not_tested"},
+  "seed_data_creation": "test_msg91_otp.py creates ~10 TEST_ patients per run using random Indian phones (+91999xxxxxxx, +91993/992/991xxxxxxx) and bare 10-digit variants. All records prefixed with 'TEST' in names. Universal OTP 123456 used throughout. Uses conftest.py session-scoped patient_session + doctor_session fixtures. No production data touched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend: 75/75 tests pass serially (`pytest tests/ -n 0`). Under default parallel `-n 2 --dist loadscope`, 1 pre-existing flake in TestDoctorPatients.test_doctor_patients_list due to cross-worker session-scoped fixture drift — NOT related to MSG91 iteration. Public URL: EXPO_PUBLIC_BACKEND_URL from /app/frontend/.env. Provider is 'dev' as expected (TEMPLATE_ID empty). Once TEMPLATE_ID + SENDER_ID are configured, MSG91 branch will activate; add mocked tests for msg91 provider path before that switch. Phone normalization: '+91XXXXXXXXXX', '0091XXXXXXXXXX', or bare 'XXXXXXXXXX' all resolve to +91XXXXXXXXXX. Universal OTP 123456 always accepted.",
+  "rca_of_issue": "N/A — all 11 review-request behaviors verified green. Startup log line matches spec exactly. /auth/me works after both '+91' and bare-10-digit login (same user_id). No regressions in the 61 prior tests."
+}

@@ -40,6 +40,13 @@ APP_NAME = os.environ.get("APP_NAME", "agrawal-homeo-hall")
 STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com"
 STORAGE_URL = STORAGE_BASE.rstrip("/") + "/objstore/api/v1/storage"
 
+# MSG91 SMS OTP config
+MSG91_AUTHKEY = (os.environ.get("MSG91_AUTHKEY") or "").strip()
+MSG91_TEMPLATE_ID = (os.environ.get("MSG91_TEMPLATE_ID") or "").strip()
+MSG91_SENDER_ID = (os.environ.get("MSG91_SENDER_ID") or "").strip()
+MSG91_DEFAULT_CC = (os.environ.get("MSG91_DEFAULT_COUNTRY_CODE") or "91").strip()
+MSG91_ENABLED = bool(MSG91_AUTHKEY and MSG91_TEMPLATE_ID)
+
 client = AsyncIOMotorClient(mongo_url)
 db = client[DB_NAME]
 
@@ -293,6 +300,12 @@ async def on_startup():
     except Exception as e:
         logger.warning(f"Storage init failed (will retry on demand): {e}")
 
+    if MSG91_ENABLED:
+        logger.info(f"MSG91 SMS OTP ENABLED (template={MSG91_TEMPLATE_ID[:6]}...) sender={MSG91_SENDER_ID or '(default)'}")
+    else:
+        reason = "no AUTHKEY" if not MSG91_AUTHKEY else "no TEMPLATE_ID (waiting on DLT approval)"
+        logger.warning(f"MSG91 disabled ({reason}). Using dev-mode OTP with 123456 fallback.")
+
 
 # ---------------------------------------------------------------------------
 # Health / static content
@@ -429,36 +442,126 @@ async def auth_session(payload: SessionRequest):
 
 @api_router.post("/auth/otp/request")
 async def request_otp(payload: PhoneOtpRequest):
-    """DEV mode phone OTP. Returns the OTP in the response.
-    In production, replace with Twilio/MSG91."""
+    """Send an OTP to the user's phone.
+    - If MSG91_AUTHKEY + MSG91_TEMPLATE_ID are configured → real SMS via MSG91.
+    - Otherwise → dev mode: OTP is generated locally and returned in the response.
+      The universal fallback OTP `123456` is always accepted.
+    """
+    # Normalise: MSG91 expects country code + national number without '+'
+    raw = payload.phone.strip().replace(" ", "").replace("-", "")
+    if raw.startswith("+"):
+        digits = raw[1:]
+    elif raw.startswith("00"):
+        digits = raw[2:]
+    else:
+        # No CC given → prepend default (India)
+        digits = raw if len(raw) > 10 else f"{MSG91_DEFAULT_CC}{raw}"
+    if not digits.isdigit() or len(digits) < 10:
+        raise HTTPException(status_code=400, detail="Invalid phone number")
+    stored_phone = f"+{digits}"
+
+    if MSG91_ENABLED:
+        # Delegate OTP generation + SMS delivery to MSG91.
+        try:
+            params = {"template_id": MSG91_TEMPLATE_ID, "mobile": digits, "otp_length": 6}
+            if MSG91_SENDER_ID:
+                params["sender"] = MSG91_SENDER_ID
+            resp = await run_in_threadpool(
+                lambda: requests.post(
+                    "https://control.msg91.com/api/v5/otp",
+                    params=params,
+                    headers={"authkey": MSG91_AUTHKEY, "Accept": "application/json"},
+                    timeout=15,
+                )
+            )
+            data = resp.json() if resp.headers.get("Content-Type", "").startswith("application/json") else {"raw": resp.text}
+            if resp.status_code == 200 and str(data.get("type", "")).lower() == "success":
+                # Mark this phone as awaiting MSG91 verification (no local OTP stored).
+                await db.otp_codes.update_one(
+                    {"phone": stored_phone},
+                    {"$set": {
+                        "phone": stored_phone,
+                        "provider": "msg91",
+                        "otp": None,
+                        "expires_at": datetime.now(timezone.utc) + timedelta(minutes=10),
+                    }},
+                    upsert=True,
+                )
+                logger.info(f"MSG91 OTP sent to {stored_phone}")
+                return {"success": True, "provider": "msg91",
+                        "message": "OTP sent via SMS. Enter 123456 as emergency backup if you don't receive it."}
+            logger.warning(f"MSG91 send failed ({resp.status_code}): {data}. Falling back to dev OTP.")
+        except Exception as e:
+            logger.warning(f"MSG91 request error: {e}. Falling back to dev OTP.")
+
+    # DEV / fallback path
     otp = f"{random.randint(100000, 999999)}"
     await db.otp_codes.update_one(
-        {"phone": payload.phone},
-        {"$set": {"phone": payload.phone, "otp": otp,
-                  "expires_at": datetime.now(timezone.utc) + timedelta(minutes=10)}},
+        {"phone": stored_phone},
+        {"$set": {
+            "phone": stored_phone,
+            "provider": "dev",
+            "otp": otp,
+            "expires_at": datetime.now(timezone.utc) + timedelta(minutes=10),
+        }},
         upsert=True,
     )
-    logger.info(f"OTP for {payload.phone}: {otp}")
-    return {"success": True, "otp_dev": otp, "message": "OTP sent (dev mode returns OTP)"}
+    logger.info(f"DEV OTP for {stored_phone}: {otp}")
+    return {"success": True, "provider": "dev", "otp_dev": otp,
+            "message": "OTP sent (dev mode returns OTP). Universal fallback: 123456"}
 
 
 @api_router.post("/auth/otp/verify")
 async def verify_otp(payload: PhoneOtpVerify):
-    row = await db.otp_codes.find_one({"phone": payload.phone}, {"_id": 0})
-    # Accept 123456 as universal dev OTP too
+    # Normalise phone same way as request
+    raw = payload.phone.strip().replace(" ", "").replace("-", "")
+    if raw.startswith("+"):
+        digits = raw[1:]
+    elif raw.startswith("00"):
+        digits = raw[2:]
+    else:
+        digits = raw if len(raw) > 10 else f"{MSG91_DEFAULT_CC}{raw}"
+    stored_phone = f"+{digits}"
+
+    row = await db.otp_codes.find_one({"phone": stored_phone}, {"_id": 0})
     valid = False
-    if row and row.get("otp") == payload.otp:
+
+    # Universal emergency fallback (documented, keeps the app usable during MSG91 setup)
+    if payload.otp == "123456":
+        valid = True
+
+    if not valid and row:
         exp = row.get("expires_at")
         if exp and exp.tzinfo is None:
             exp = exp.replace(tzinfo=timezone.utc)
-        if exp and exp >= datetime.now(timezone.utc):
-            valid = True
-    if payload.otp == "123456":
-        valid = True
+        expired = exp and exp < datetime.now(timezone.utc)
+
+        if not expired:
+            if row.get("provider") == "msg91" and MSG91_ENABLED:
+                # Verify via MSG91
+                try:
+                    resp = await run_in_threadpool(
+                        lambda: requests.get(
+                            "https://control.msg91.com/api/v5/otp/verify",
+                            params={"otp": payload.otp, "mobile": digits},
+                            headers={"authkey": MSG91_AUTHKEY, "Accept": "application/json"},
+                            timeout=15,
+                        )
+                    )
+                    data = resp.json() if resp.headers.get("Content-Type", "").startswith("application/json") else {}
+                    if resp.status_code == 200 and str(data.get("type", "")).lower() == "success":
+                        valid = True
+                    else:
+                        logger.info(f"MSG91 verify rejected for {stored_phone}: {data}")
+                except Exception as e:
+                    logger.warning(f"MSG91 verify error: {e}")
+            elif row.get("otp") and row.get("otp") == payload.otp:
+                valid = True
+
     if not valid:
         raise HTTPException(status_code=401, detail="Invalid or expired OTP")
 
-    existing = await db.users.find_one({"phone": payload.phone}, {"_id": 0})
+    existing = await db.users.find_one({"phone": stored_phone}, {"_id": 0})
     if existing:
         user_id = existing["user_id"]
         user_doc = existing
@@ -466,8 +569,8 @@ async def verify_otp(payload: PhoneOtpVerify):
         user_id = f"user_{uuid.uuid4().hex[:12]}"
         user_doc = {
             "user_id": user_id,
-            "phone": payload.phone,
-            "name": payload.name or f"User {payload.phone[-4:]}",
+            "phone": stored_phone,
+            "name": payload.name or f"User {stored_phone[-4:]}",
             "role": payload.role,
             "created_at": datetime.now(timezone.utc),
         }
@@ -476,7 +579,7 @@ async def verify_otp(payload: PhoneOtpVerify):
     user_doc = await ensure_user_defaults(user_doc)
     session_row = _mint_session_token(user_id)
     await db.user_sessions.insert_one({**session_row})
-    await db.otp_codes.delete_one({"phone": payload.phone})
+    await db.otp_codes.delete_one({"phone": stored_phone})
     return {"session_token": session_row["session_token"], "user": user_doc}
 
 

@@ -120,11 +120,11 @@ export default function LoginScreen() {
     setError(null);
     setLoading(true);
     try {
-      const data = await apiJson<{ otp_dev: string }>("/auth/otp/request", {
+      const data = await apiJson<{ otp_dev?: string; provider?: string }>("/auth/otp/request", {
         method: "POST",
         body: JSON.stringify({ phone }),
       });
-      setDevOtp(data.otp_dev);
+      setDevOtp(data.provider === "msg91" ? null : (data.otp_dev || null));
       setMode("otp");
     } catch (e: any) {
       setError(e?.message || "Failed to send OTP");
@@ -262,10 +262,15 @@ export default function LoginScreen() {
             ) : (
               <View>
                 <Text style={styles.label}>Enter OTP sent to {phone}</Text>
-                {devOtp && (
+                {devOtp ? (
                   <View style={styles.devHint} testID="dev-otp-hint">
                     <Icon name="information-circle" size={14} color="#065F46" />
                     <Text style={styles.devHintTxt}>Dev OTP: {devOtp}  •  (or use 123456)</Text>
+                  </View>
+                ) : (
+                  <View style={styles.devHint} testID="sms-otp-hint">
+                    <Icon name="chatbubble-ellipses" size={14} color="#065F46" />
+                    <Text style={styles.devHintTxt}>SMS sent via MSG91. Backup code: 123456</Text>
                   </View>
                 )}
                 <View style={styles.inputWrap}>

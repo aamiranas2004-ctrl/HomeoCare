@@ -45,7 +45,9 @@ portal that the website itself does not have.
 - `otp_codes`: transient phone→OTP records with 10-min expiry.
 
 ## Known simplifications (upgrade in later iterations)
-- Phone OTP is **dev mode** (OTP returned in response). MSG91 signup pending — will wire up when API keys arrive.
+- **MSG91 SMS OTP wired** ✅ with `AUTHKEY`. Waiting on user's DLT-approved
+  `TEMPLATE_ID` — until then backend falls back to dev-mode OTP and the universal
+  `123456` backup code. Switch is automatic when TEMPLATE_ID lands in `/app/backend/.env`.
 - Single doctor seeded (Dr. Sonima). Multi-doctor is supported by the schema.
 - No push notifications yet (must be requested by user; requires build).
 
