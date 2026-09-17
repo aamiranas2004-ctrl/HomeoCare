@@ -1,0 +1,47 @@
+{
+  "summary": "Backend-only iteration 4 for per-appointment doctor/patient chat. Added /app/backend/tests/test_chat_messages.py with 19 tests covering: patient POST message → sender_role='patient', sender_id, sender_name populated, read flags correct; doctor GET marks patient messages read_by_doctor=true (verified via /chat/unread=0); doctor reply → sender_role='doctor'; patient GET marks doctor msgs read_by_patient; /chat/unread aggregates {appt_id: count} per-role; validation: empty text → 400, whitespace-only → 400, 2001-char → 400, 2000-char boundary → 200; unknown appointment GET/POST → 404; non-participant patient GET/POST → 403; unauthorized (no bearer) on /messages and /chat/unread → 401. Full suite: 94/94 PASS in 12.6s (75 previous + 19 new). No regressions. One nuance: GET /messages returns the pre-read snapshot then updates DB — i.e. on the first GET after new unread messages, the response still shows read=false, but the database is correctly updated (verified via a subsequent GET and via /chat/unread=0). Not a bug, but worth noting for UI polling logic.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/appointments/{id}/messages", "issue": "server.py:724-735 fetches rows THEN issues update_many — so the response reflects pre-update read flags. The DB state is updated correctly (verified via a follow-up GET and /chat/unread=0), but a first-time GET returns messages where read_by_{other-role}=false even though they will be true on the next read. UI can safely treat these as read on the caller's own side. Consider swapping the order (update first, then fetch) if you want the response to reflect the just-marked state."},
+      {"endpoint": "GET /api/chat/unread", "issue": "Returned map only contains appointment IDs with count > 0 (aggregation groups on match). Consumers should treat missing keys as 0. Confirmed via test; matches the review-request spec."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_chat_messages.py",
+    "/app/backend/tests/test_agrawal_homeo_backend.py",
+    "/app/backend/tests/test_family_profiles.py",
+    "/app/backend/tests/test_msg91_otp.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/iteration_4_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Swap the order in list_messages (server.py:724-735) to update_many first, then find(), so the returned payload already reflects the just-marked read state — avoids one round-trip on the client if it wants to render read receipts immediately.",
+    "(Optional) Consider a compound index on chat_messages { appointment_id: 1, sender_role: 1, read_by_doctor: 1 } (and read_by_patient) to speed up the /chat/unread aggregation as thread counts grow — current single-field + compound (appointment_id, created_at) indexes are already declared and cover the list endpoint well.",
+    "(Optional) Add a `sender_picture` field to ChatMessage so the mobile UI can show avatars without a second /doctors or /users lookup."
+  ],
+  "critical_code_review_comments": [
+    "server.py grew to 974 lines — still above the recommended 700-line split; chat handlers add ~70 lines. Recommend extracting /app/backend/routers/chat.py (and auth.py, appointments.py) into separate modules.",
+    "The 403 check in _load_chat_appointment (l.712-718) is duplicated with GET /appointments/{id} (l.687-688). DRY it into a shared helper _appointment_participant_or_403(appt_id, user).",
+    "Message text validation is only length-based (1..2000). Consider stripping/rejecting control characters and normalizing unicode (NFC) before persisting, and enforce a per-minute rate-limit per (user, appointment) to prevent spam.",
+    "ChatMessage.created_at uses datetime.now(timezone.utc) via Field(default_factory=...) — good; ordering via sort('created_at', 1) is stable.",
+    "Read-marking is unconditional on GET (even if the caller is only re-polling). This is fine for correctness but generates writes on every poll. Consider guarding with a $match on read_by_{other}=False to short-circuit the update_many when nothing changed (Mongo already does this efficiently, so mostly a micro-optimization).",
+    "MongoDB _id excluded via projection {'_id': 0} on all chat reads — good.",
+    "No test / production toggle to disable the chat feature; consider a feature flag if you want to A/B-test the UI."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_chat_messages.py (new, 19 tests)"
+  ],
+  "success_rate": {"backend": "100% (94/94)", "frontend": "not_tested"},
+  "seed_data_creation": "test_chat_messages.py creates 2 TEST_ patients ('TEST Chat Patient', 'TEST Other Patient') using random +91999xxxxxxx phones, uses the seeded doctor Dr. Sonima Agrawal (+917294136264), and creates 1 test appointment. All chat messages prefixed 'TEST' in text where appropriate. Universal OTP 123456 used. No production data touched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend chat suite: 19 tests, 100% pass. Full regression: 94/94. Public URL: EXPO_PUBLIC_BACKEND_URL from /app/frontend/.env. Key endpoint semantics: (1) POST /appointments/{id}/messages marks read_by_{sender-role}=true immediately, read_by_{other}=false. (2) GET /appointments/{id}/messages returns pre-update snapshot BUT updates read flags in DB (verify persistence via a second GET or /chat/unread). (3) /chat/unread only returns appointments with count>0. (4) Only participants (patient_id or doctor_id) can GET/POST; others get 403. Text validation: strip whitespace, reject empty, reject >2000 chars, accept exactly 2000. No frontend testing done — main agent should verify the mobile chat UI wiring.",
+  "rca_of_issue": "N/A — all 11 review-request behaviors verified green. All 75 previously-passing tests still pass. 3 initial test-authoring assertion issues on my side (expecting GET response to already reflect the just-marked read state; and off-by-one from a boundary-length test message leaving one unread) were corrected in the test file — the backend behavior itself is correct and matches the spec (DB read-state is properly persisted, verified via follow-up GET + /chat/unread=0)."
+}

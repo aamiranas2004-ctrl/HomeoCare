@@ -13,14 +13,19 @@ export default function AppointmentsScreen() {
   const styles = useStyles();
   const router = useRouter();
   const [items, setItems] = useState<any[]>([]);
+  const [unread, setUnread] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("upcoming");
   const [refreshing, setRefreshing] = useState(false);
 
   const load = async () => {
     try {
-      const data = await apiJson<any[]>("/appointments/mine");
+      const [data, u] = await Promise.all([
+        apiJson<any[]>("/appointments/mine"),
+        apiJson<Record<string, number>>("/chat/unread").catch(() => ({})),
+      ]);
       setItems(data);
+      setUnread(u || {});
     } catch {} finally {
       setLoading(false);
     }
@@ -122,6 +127,18 @@ export default function AppointmentsScreen() {
                     <Text style={styles.replyTxt}>{a.consultation_notes}</Text>
                   </View>
                 ) : null}
+                <Pressable
+                  testID={`chat-${a.id}`}
+                  onPress={() => router.push(`/chat/${a.id}` as any)}
+                  style={styles.chatBtn}
+                >
+                  <Icon name="chatbubbles" size={14} color="#FFFFFF" />
+                  <Text style={styles.chatBtnTxt}>
+                    Chat with doctor
+                    {unread[a.id] ? `  •  ${unread[a.id]} new` : ""}
+                  </Text>
+                  {unread[a.id] ? <View style={styles.dot} /> : null}
+                </Pressable>
               </View>
             ))
           )}
@@ -173,4 +190,10 @@ const useStyles = makeStyles((c) => ({
     alignSelf: "flex-start", paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.pill, marginTop: 4,
   },
   familyTxt: { color: c.onBrandTertiary, fontSize: 10, fontWeight: "700", textTransform: "capitalize" },
+  chatBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    backgroundColor: c.brandSecondary, borderRadius: radius.pill, paddingVertical: 10,
+  },
+  chatBtnTxt: { color: c.onBrandSecondary, fontSize: 12, fontWeight: "700" },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#FFFFFF" },
 }));

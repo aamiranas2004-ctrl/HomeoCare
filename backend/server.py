@@ -209,6 +209,22 @@ class FamilyMember(FamilyMemberCreate):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class ChatMessageCreate(BaseModel):
+    text: str
+
+
+class ChatMessage(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    appointment_id: str
+    sender_id: str
+    sender_role: Literal["patient", "doctor"]
+    sender_name: str
+    text: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    read_by_doctor: bool = False
+    read_by_patient: bool = False
+
+
 # ---------------------------------------------------------------------------
 # Auth helpers
 # ---------------------------------------------------------------------------
@@ -276,6 +292,8 @@ async def on_startup():
     await db.files.create_index("patient_id")
     await db.family_members.create_index("account_id")
     await db.family_members.create_index("id", unique=True)
+    await db.chat_messages.create_index("appointment_id")
+    await db.chat_messages.create_index([("appointment_id", 1), ("created_at", 1)])
 
     # Seed the clinic's doctor
     doctor = await db.users.find_one({"email": "dr.sonima@agrawalhomeohall.com"}, {"_id": 0})
@@ -686,6 +704,80 @@ async def update_appointment(appt_id: str, payload: ConsultationNoteUpdate,
     await db.appointments.update_one({"id": appt_id}, {"$set": update})
     row.update(update)
     return Appointment(**row)
+
+
+# ---------------------------------------------------------------------------
+# Chat (per-appointment thread)
+# ---------------------------------------------------------------------------
+async def _load_chat_appointment(appt_id: str, user: dict) -> dict:
+    row = await db.appointments.find_one({"id": appt_id}, {"_id": 0})
+    if not row:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    if user["user_id"] not in (row["patient_id"], row["doctor_id"]):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return row
+
+
+@api_router.get("/appointments/{appt_id}/messages", response_model=List[ChatMessage])
+async def list_messages(appt_id: str, user: dict = Depends(get_current_user)):
+    appt = await _load_chat_appointment(appt_id, user)
+    rows = await db.chat_messages.find({"appointment_id": appt_id}, {"_id": 0}).sort("created_at", 1).to_list(500)
+    # Mark other party's messages as read for the requesting side
+    if user.get("role") == "doctor":
+        await db.chat_messages.update_many(
+            {"appointment_id": appt_id, "sender_role": "patient", "read_by_doctor": False},
+            {"$set": {"read_by_doctor": True}},
+        )
+    else:
+        await db.chat_messages.update_many(
+            {"appointment_id": appt_id, "sender_role": "doctor", "read_by_patient": False},
+            {"$set": {"read_by_patient": True}},
+        )
+    return [ChatMessage(**r) for r in rows]
+
+
+@api_router.post("/appointments/{appt_id}/messages", response_model=ChatMessage)
+async def send_message(appt_id: str, payload: ChatMessageCreate,
+                        user: dict = Depends(get_current_user)):
+    text = (payload.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Message text required")
+    if len(text) > 2000:
+        raise HTTPException(status_code=400, detail="Message too long (max 2000 chars)")
+    await _load_chat_appointment(appt_id, user)
+    role = user.get("role", "patient")
+    msg = ChatMessage(
+        appointment_id=appt_id,
+        sender_id=user["user_id"],
+        sender_role=role,
+        sender_name=user.get("name", ""),
+        text=text,
+        read_by_doctor=(role == "doctor"),
+        read_by_patient=(role == "patient"),
+    )
+    await db.chat_messages.insert_one(msg.dict())
+    return msg
+
+
+@api_router.get("/chat/unread")
+async def chat_unread_counts(user: dict = Depends(get_current_user)):
+    """Return {appointment_id: unread_count} for the current user across their appointments."""
+    role = user.get("role", "patient")
+    field = "read_by_doctor" if role == "doctor" else "read_by_patient"
+    opposite = "patient" if role == "doctor" else "doctor"
+
+    query_appts = {"doctor_id" if role == "doctor" else "patient_id": user["user_id"]}
+    appt_ids = [
+        a["id"] for a in await db.appointments.find(query_appts, {"_id": 0, "id": 1}).to_list(500)
+    ]
+    if not appt_ids:
+        return {}
+    pipeline = [
+        {"$match": {"appointment_id": {"$in": appt_ids}, "sender_role": opposite, field: False}},
+        {"$group": {"_id": "$appointment_id", "count": {"$sum": 1}}},
+    ]
+    rows = await db.chat_messages.aggregate(pipeline).to_list(500)
+    return {r["_id"]: r["count"] for r in rows}
 
 
 # ---------------------------------------------------------------------------

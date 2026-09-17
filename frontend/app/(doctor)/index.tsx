@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, ScrollView, Pressable, ActivityIndicator, RefreshControl, TextInput } from "react-native";
 import Icon from "@react-native-vector-icons/ionicons";
+import { useRouter } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { makeStyles, spacing, radius } from "@/src/theme";
@@ -9,8 +10,10 @@ import { apiJson, useAuth } from "@/src/api";
 export default function DoctorQueue() {
   const styles = useStyles();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { user } = useAuth();
   const [items, setItems] = useState<any[]>([]);
+  const [unread, setUnread] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -18,8 +21,12 @@ export default function DoctorQueue() {
 
   const load = async () => {
     try {
-      const data = await apiJson<any[]>("/appointments/mine");
+      const [data, u] = await Promise.all([
+        apiJson<any[]>("/appointments/mine"),
+        apiJson<Record<string, number>>("/chat/unread").catch(() => ({})),
+      ]);
       setItems(data);
+      setUnread(u || {});
     } catch {} finally { setLoading(false); }
   };
 
@@ -156,6 +163,18 @@ export default function DoctorQueue() {
                     )}
                   </View>
                 )}
+                <Pressable
+                  testID={`chat-${a.id}`}
+                  onPress={() => router.push(`/chat/${a.id}` as any)}
+                  style={styles.chatBtn}
+                >
+                  <Icon name="chatbubbles" size={14} color="#FFFFFF" />
+                  <Text style={styles.chatBtnTxt}>
+                    Chat with patient
+                    {unread[a.id] ? `  •  ${unread[a.id]} new` : ""}
+                  </Text>
+                  {unread[a.id] ? <View style={styles.dot} /> : null}
+                </Pressable>
               </View>
             ))
           )}
@@ -211,4 +230,10 @@ const useStyles = makeStyles((c) => ({
   consultTxt: { color: c.onBrandSecondary, fontWeight: "700", fontSize: 12 },
   confirmBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: radius.pill, backgroundColor: c.brandPrimary },
   confirmTxt: { color: c.onBrandPrimary, fontWeight: "700", fontSize: 12 },
+  chatBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    backgroundColor: c.brandSecondary, borderRadius: radius.pill, paddingVertical: 10,
+  },
+  chatBtnTxt: { color: c.onBrandSecondary, fontSize: 12, fontWeight: "700" },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#FFFFFF" },
 }));

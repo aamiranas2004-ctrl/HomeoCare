@@ -44,6 +44,13 @@ portal that the website itself does not have.
    content_type, size, category, note, doctor_reply?, status, created_at}`
 - `otp_codes`: transient phone→OTP records with 10-min expiry.
 
+## Doctor Chat (v3)
+- Every appointment gets its own private chat thread that both the patient (or the primary account on behalf of a family member) and the assigned doctor can access.
+- **Endpoints**: `GET/POST /api/appointments/{id}/messages`, `GET /api/chat/unread` returns `{appointment_id: count}` for badge counts.
+- Read receipts: fetching `/messages` auto-marks the opposite party's messages as read; the badge on the tab / card disappears.
+- UI: patient sees a **Chat with doctor** button on every appointment card; doctor sees **Chat with patient** on every queue card. Both show the unread count inline. Full chat screen polls every 4 seconds and auto-scrolls.
+- Permissions: only the two participants (appointment.patient_id and doctor_id) can read or send; anyone else gets 403. Missing bearer → 401. Empty / whitespace / >2000 chars → 400.
+
 ## Known simplifications (upgrade in later iterations)
 - **MSG91 SMS OTP wired** ✅ with `AUTHKEY`. Waiting on user's DLT-approved
   `TEMPLATE_ID` — until then backend falls back to dev-mode OTP and the universal
