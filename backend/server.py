@@ -40,6 +40,10 @@ APP_NAME = os.environ.get("APP_NAME", "agrawal-homeo-hall")
 STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com"
 STORAGE_URL = STORAGE_BASE.rstrip("/") + "/objstore/api/v1/storage"
 
+# Clinic identity
+CLINIC_DOCTOR_PHONE = "+917294136264"          # only phone allowed to log in as doctor
+CLINIC_DOCTOR_PHONE_DISPLAY = "+91-7294136264"
+
 # MSG91 SMS OTP config
 MSG91_AUTHKEY = (os.environ.get("MSG91_AUTHKEY") or "").strip()
 MSG91_TEMPLATE_ID = (os.environ.get("MSG91_TEMPLATE_ID") or "").strip()
@@ -301,7 +305,7 @@ async def on_startup():
         await db.users.insert_one({
             "user_id": f"user_{uuid.uuid4().hex[:12]}",
             "email": "dr.sonima@agrawalhomeohall.com",
-            "phone": "+917294136264",
+            "phone": CLINIC_DOCTOR_PHONE,
             "name": "Dr. Sonima Agrawal",
             "picture": "https://agrawalhomeohall.com/wp-content/uploads/2026/06/ChatGPT-Image-Jun-23-2026-11_17_26-AM-682x1024.png",
             "role": "doctor",
@@ -310,6 +314,16 @@ async def on_startup():
             "created_at": datetime.now(timezone.utc),
         })
         logger.info("Seeded default doctor Dr. Sonima Agrawal")
+
+    # Demote any stray "doctor" accounts that are NOT the seeded clinic doctor
+    # (e.g. leftover from tests). Only the clinic phone may keep role=doctor.
+    demote_res = await db.users.update_many(
+        {"role": "doctor", "phone": {"$ne": CLINIC_DOCTOR_PHONE},
+         "email": {"$ne": "dr.sonima@agrawalhomeohall.com"}},
+        {"$set": {"role": "patient"}},
+    )
+    if demote_res.modified_count:
+        logger.info(f"Demoted {demote_res.modified_count} stray doctor account(s) to patient")
 
     # Initialize storage (non-fatal)
     try:
@@ -584,12 +598,17 @@ async def verify_otp(payload: PhoneOtpVerify):
         user_id = existing["user_id"]
         user_doc = existing
     else:
+        # Only the clinic's registered doctor phone may create a doctor account.
+        # Any other phone attempting role=doctor is quietly downgraded to patient.
+        desired_role = payload.role if (
+            payload.role == "patient" or stored_phone == CLINIC_DOCTOR_PHONE
+        ) else "patient"
         user_id = f"user_{uuid.uuid4().hex[:12]}"
         user_doc = {
             "user_id": user_id,
             "phone": stored_phone,
             "name": payload.name or f"User {stored_phone[-4:]}",
-            "role": payload.role,
+            "role": desired_role,
             "created_at": datetime.now(timezone.utc),
         }
         await db.users.insert_one({**user_doc})
@@ -617,8 +636,13 @@ async def logout(authorization: Optional[str] = Header(None)):
 
 @api_router.post("/auth/role")
 async def update_role(payload: RoleUpdate, user: dict = Depends(get_current_user)):
-    """Set role after first Google login (patient/doctor)."""
-    update = {"role": payload.role}
+    """Set role after first Google login (patient/doctor).
+    Only the clinic's registered doctor phone may be assigned the doctor role."""
+    desired = payload.role
+    if desired == "doctor" and user.get("phone") != CLINIC_DOCTOR_PHONE and \
+            user.get("email") != "dr.sonima@agrawalhomeohall.com":
+        desired = "patient"
+    update = {"role": desired}
     if payload.age is not None:
         update["age"] = payload.age
     if payload.gender:

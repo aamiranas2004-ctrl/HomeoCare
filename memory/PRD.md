@@ -44,6 +44,12 @@ portal that the website itself does not have.
    content_type, size, category, note, doctor_reply?, status, created_at}`
 - `otp_codes`: transient phone→OTP records with 10-min expiry.
 
+## Clinic doctor login (v4)
+- The clinic's contact number `+91-7294136264` is the **only** phone allowed to hold the doctor role.
+- Backend enforces this at every entry point: OTP signup and `POST /auth/role` silently downgrade any other number/email to `patient`. On startup we also demote any stray legacy doctor rows.
+- The Login screen displays a soft hint when the "I'm a Doctor" chip is selected: "Doctor login is restricted to the clinic's registered number (+91-7294136264)."
+- Logging in with either `+917294136264` or `+91-7294136264` (with dash) resolves to the seeded Dr. Sonima Agrawal user and drops the user straight into the Doctor tabs where all clinic-wide appointments are visible.
+
 ## Doctor Chat (v3)
 - Every appointment gets its own private chat thread that both the patient (or the primary account on behalf of a family member) and the assigned doctor can access.
 - **Endpoints**: `GET/POST /api/appointments/{id}/messages`, `GET /api/chat/unread` returns `{appointment_id: count}` for badge counts.

@@ -199,6 +199,14 @@ export default function LoginScreen() {
                 </Pressable>
               ))}
             </View>
+            {role === "doctor" && (
+              <View style={styles.docHint} testID="doctor-hint">
+                <Icon name="lock-closed" size={12} color="#065F46" />
+                <Text style={styles.docHintTxt}>
+                  Doctor login is restricted to the clinic's registered number (+91-7294136264).
+                </Text>
+              </View>
+            )}
 
             {mode === "phone" ? (
               <View>
@@ -363,6 +371,12 @@ const useStyles = makeStyles((c) => ({
     padding: spacing.sm, borderRadius: radius.sm, marginBottom: spacing.sm,
   },
   devHintTxt: { color: c.onBrandTertiary, fontSize: 12, fontWeight: "500" },
+
+  docHint: {
+    flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: c.brandTertiary,
+    padding: spacing.sm, borderRadius: radius.sm, marginTop: -spacing.xs,
+  },
+  docHintTxt: { color: c.onBrandTertiary, fontSize: 11, fontWeight: "500", flex: 1 },
 
   primaryBtn: {
     backgroundColor: c.brandPrimary, borderRadius: radius.pill, paddingVertical: 16,
