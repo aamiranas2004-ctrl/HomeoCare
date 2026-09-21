@@ -80,6 +80,7 @@ export type User = {
   uhid?: string;
   age?: number;
   gender?: string;
+  address?: string;
   specialization?: string;
   qualification?: string;
 };

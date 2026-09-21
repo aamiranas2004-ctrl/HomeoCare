@@ -1,5 +1,5 @@
-import React from "react";
-import { View, Text, Pressable, ScrollView, Linking } from "react-native";
+import React, { useState } from "react";
+import { View, Text, Pressable, ScrollView, Linking, TextInput } from "react-native";
 import { Image } from "expo-image";
 import Icon from "@react-native-vector-icons/ionicons";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -10,8 +10,20 @@ import { useAuth } from "@/src/api";
 
 export default function ProfileScreen() {
   const styles = useStyles();
-  const { user, logout } = useAuth();
+  const { user, logout, updateRole } = useAuth();
   const router = useRouter();
+  const [addrDraft, setAddrDraft] = useState("");
+  const [savingAddr, setSavingAddr] = useState(false);
+
+  const saveAddress = async () => {
+    if (!addrDraft.trim()) return;
+    setSavingAddr(true);
+    try {
+      await updateRole("patient", { address: addrDraft.trim() });
+    } catch {} finally {
+      setSavingAddr(false);
+    }
+  };
 
   return (
     <SafeAreaView edges={["top"]} style={styles.safe} testID="profile-screen">
@@ -31,9 +43,32 @@ export default function ProfileScreen() {
               <Text style={styles.uhidTxt}>UHID: {user.uhid}</Text>
             </View>
           )}
-          <View style={{ marginTop: spacing.md }}>
+          <View style={{ marginTop: spacing.md, alignSelf: "stretch" }}>
             {user?.email && <Row icon="mail" value={user.email} />}
             {user?.phone && <Row icon="call" value={user.phone} />}
+            {user?.address ? (
+              <Row icon="location" value={user.address} />
+            ) : (
+              <View style={styles.addrWrap} testID="address-edit">
+                <Icon name="location" size={14} color="#64748B" />
+                <TextInput
+                  testID="address-input"
+                  value={addrDraft}
+                  onChangeText={setAddrDraft}
+                  placeholder="Add your address"
+                  placeholderTextColor="#94A3B8"
+                  style={styles.addrInput}
+                />
+                <Pressable
+                  testID="save-address-btn"
+                  onPress={saveAddress}
+                  disabled={savingAddr || !addrDraft.trim()}
+                  style={[styles.addrSave, (!addrDraft.trim() || savingAddr) && { opacity: 0.5 }]}
+                >
+                  <Text style={styles.addrSaveTxt}>Save</Text>
+                </Pressable>
+              </View>
+            )}
             <Row icon="person-circle" value={`Role: ${user?.role || "patient"}`} />
           </View>
         </View>
@@ -119,6 +154,14 @@ const useStyles = makeStyles((c) => ({
   uhidTxt: { color: c.onBrandTertiary, fontSize: 11, fontWeight: "700" },
   row: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 6 },
   rowTxt: { color: c.onSurfaceSecondary, fontSize: 13 },
+  addrWrap: {
+    flexDirection: "row", alignItems: "center", gap: 8, marginTop: 6,
+    backgroundColor: c.surface, borderRadius: radius.md, borderWidth: 1, borderColor: c.border,
+    paddingLeft: 10, paddingRight: 6, paddingVertical: 4,
+  },
+  addrInput: { flex: 1, color: c.onSurface, fontSize: 13, paddingVertical: 8 },
+  addrSave: { backgroundColor: c.brandPrimary, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 7 },
+  addrSaveTxt: { color: c.onBrandPrimary, fontWeight: "700", fontSize: 12 },
   section: { color: c.onSurface, fontWeight: "700", fontSize: 14, marginTop: spacing.md },
   linkRow: {
     flexDirection: "row", alignItems: "center", gap: 12,

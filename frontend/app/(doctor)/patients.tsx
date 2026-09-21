@@ -52,6 +52,9 @@ export default function DoctorPatients() {
             <Text style={styles.detailMeta}>
               {selected.uhid || "No UHID"} • {selected.phone || selected.email || ""}
             </Text>
+            {selected.address ? (
+              <Text style={styles.detailMeta}>📍 {selected.address}</Text>
+            ) : null}
           </View>
         </View>
         {!detail ? (

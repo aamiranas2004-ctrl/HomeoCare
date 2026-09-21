@@ -36,6 +36,7 @@ export default function LoginScreen() {
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
   const [name, setName] = useState("");
+  const [address, setAddress] = useState("");
   const [role, setRole] = useState<"patient" | "doctor">("patient");
   const [devOtp, setDevOtp] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -118,6 +119,16 @@ export default function LoginScreen() {
       setError("Enter a valid phone number");
       return;
     }
+    if (role === "patient") {
+      if (!name.trim()) {
+        setError("Please enter your full name");
+        return;
+      }
+      if (!address.trim()) {
+        setError("Please enter your address");
+        return;
+      }
+    }
     setError(null);
     setLoading(true);
     try {
@@ -144,7 +155,7 @@ export default function LoginScreen() {
     try {
       const data = await apiJson<{ session_token: string; user: any }>("/auth/otp/verify", {
         method: "POST",
-        body: JSON.stringify({ phone, otp, name: name || undefined, role }),
+        body: JSON.stringify({ phone, otp, name: name.trim() || undefined, address: address.trim() || undefined, role }),
       });
       await loginWithToken(data.session_token, data.user);
     } catch (e: any) {
@@ -248,14 +259,27 @@ export default function LoginScreen() {
 
                 {role === "patient" && (
                   <>
-                    <Text style={styles.label}>Full Name (optional)</Text>
+                    <Text style={styles.label}>Full Name *</Text>
                     <View style={styles.inputWrap}>
                       <TextInput
                         testID="name-input"
                         value={name}
                         onChangeText={setName}
-                        placeholder="Your name"
+                        placeholder="Your full name"
                         style={styles.input}
+                        placeholderTextColor="#94A3B8"
+                      />
+                    </View>
+
+                    <Text style={styles.label}>Address *</Text>
+                    <View style={[styles.inputWrap, { minHeight: 64, alignItems: "flex-start" }]}>
+                      <TextInput
+                        testID="address-input"
+                        value={address}
+                        onChangeText={setAddress}
+                        placeholder="House no., street, city"
+                        style={[styles.input, { textAlignVertical: "top", paddingTop: 10 }]}
+                        multiline
                         placeholderTextColor="#94A3B8"
                       />
                     </View>

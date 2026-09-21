@@ -132,6 +132,7 @@ class PhoneOtpVerify(BaseModel):
     phone: str
     otp: str
     name: Optional[str] = None
+    address: Optional[str] = None
     role: Literal["patient", "doctor"] = "patient"
 
 
@@ -139,6 +140,7 @@ class RoleUpdate(BaseModel):
     role: Literal["patient", "doctor"]
     age: Optional[int] = None
     gender: Optional[str] = None
+    address: Optional[str] = None
 
 
 class AppointmentCreate(BaseModel):
@@ -616,17 +618,31 @@ async def verify_otp(payload: PhoneOtpVerify):
     if existing:
         user_id = existing["user_id"]
         user_doc = existing
+        # Backfill name/address on existing users when provided
+        backfill = {}
+        if payload.name and not existing.get("name"):
+            backfill["name"] = payload.name
+        if payload.address and not existing.get("address"):
+            backfill["address"] = payload.address
+        if backfill:
+            await db.users.update_one({"user_id": user_id}, {"$set": backfill})
+            user_doc.update(backfill)
     else:
         # Only the clinic's registered doctor phone may create a doctor account.
         # Any other phone attempting role=doctor is quietly downgraded to patient.
         desired_role = payload.role if (
             payload.role == "patient" or stored_phone == CLINIC_DOCTOR_PHONE
         ) else "patient"
+        if not (payload.name or "").strip():
+            raise HTTPException(status_code=400, detail="Name is required")
+        if desired_role == "patient" and not (payload.address or "").strip():
+            raise HTTPException(status_code=400, detail="Address is required")
         user_id = f"user_{uuid.uuid4().hex[:12]}"
         user_doc = {
             "user_id": user_id,
             "phone": stored_phone,
-            "name": payload.name or f"User {stored_phone[-4:]}",
+            "name": payload.name.strip(),
+            "address": (payload.address or "").strip(),
             "role": desired_role,
             "created_at": datetime.now(timezone.utc),
         }
@@ -666,6 +682,8 @@ async def update_role(payload: RoleUpdate, user: dict = Depends(get_current_user
         update["age"] = payload.age
     if payload.gender:
         update["gender"] = payload.gender
+    if payload.address is not None:
+        update["address"] = payload.address
     await db.users.update_one({"user_id": user["user_id"]}, {"$set": update})
     user.update(update)
     user = await ensure_user_defaults(user)
