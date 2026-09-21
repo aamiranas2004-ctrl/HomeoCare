@@ -8,29 +8,27 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Alert,
 } from "react-native";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import Icon from "@react-native-vector-icons/ionicons";
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
-import { useRouter } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { makeStyles, spacing, radius } from "@/src/theme";
 import { API, apiJson, useAuth } from "@/src/api";
+import { ClinicLogo } from "@/src/components/clinic-logo";
 
 const HERO_IMG =
-  "https://images.unsplash.com/photo-1603277578692-c699f37c67d3?crop=entropy&cs=srgb&fm=jpg&q=85";
+  "https://images.unsplash.com/photo-1512069772995-ec65ed45afd6?crop=entropy&cs=srgb&fm=jpg&q=85&w=1080";
 
 type Mode = "phone" | "otp";
 
 export default function LoginScreen() {
   const styles = useStyles();
   const insets = useSafeAreaInsets();
-  const router = useRouter();
-  const { loginWithToken, user } = useAuth();
+  const { loginWithToken } = useAuth();
   const [mode, setMode] = useState<Mode>("phone");
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
@@ -167,15 +165,17 @@ export default function LoginScreen() {
           <View style={styles.hero}>
             <Image source={{ uri: HERO_IMG }} style={styles.heroImg} contentFit="cover" />
             <LinearGradient
-              colors={["rgba(5,150,105,0.65)", "rgba(15,23,42,0.85)"]}
+              colors={["rgba(6,95,70,0.55)", "rgba(5,150,105,0.85)", "rgba(15,23,42,0.92)"]}
+              locations={[0, 0.55, 1]}
               style={styles.heroScrim}
             />
             <View style={styles.heroContent}>
-              <View style={styles.logoBadge}>
-                <Icon name="medkit" size={28} color="#FFFFFF" />
+              <ClinicLogo size={92} showWordmark />
+              <View style={styles.trustRow}>
+                <TrustPill icon="star" text="5.0" sub="2000+ reviews" />
+                <TrustPill icon="ribbon" text="14+ yrs" sub="Experience" />
+                <TrustPill icon="shield-checkmark" text="BHMS" sub="Certified" />
               </View>
-              <Text style={styles.heroTitle}>Agrawal Homeo Hall</Text>
-              <Text style={styles.heroSub}>Expert Homeopathic Care by Dr. Sonima Agrawal</Text>
             </View>
           </View>
 
@@ -203,7 +203,7 @@ export default function LoginScreen() {
               <View style={styles.docHint} testID="doctor-hint">
                 <Icon name="lock-closed" size={12} color="#065F46" />
                 <Text style={styles.docHintTxt}>
-                  Doctor login is restricted to the clinic's registered number (+91-7294136264).
+                  Doctor login is restricted to the clinic&apos;s registered number (+91-7294136264).
                 </Text>
               </View>
             )}
@@ -333,19 +333,37 @@ export default function LoginScreen() {
   );
 }
 
+function TrustPill({ icon, text, sub }: { icon: any; text: string; sub: string }) {
+  const styles = useStyles();
+  return (
+    <View style={styles.trustPill}>
+      <Icon name={icon} size={12} color="#FFFFFF" />
+      <View>
+        <Text style={styles.trustPillText}>{text}</Text>
+        <Text style={styles.trustPillSub}>{sub}</Text>
+      </View>
+    </View>
+  );
+}
+
+
 const useStyles = makeStyles((c) => ({
   safe: { flex: 1, backgroundColor: c.surface },
-  hero: { height: 260, position: "relative" },
+  hero: { minHeight: 340, position: "relative" },
   heroImg: { ...(Platform.OS === "web" ? { width: "100%", height: "100%" } : {}), position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
   heroScrim: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
-  heroContent: { flex: 1, justifyContent: "flex-end", padding: spacing.xl },
-  logoBadge: {
-    width: 52, height: 52, borderRadius: radius.md, backgroundColor: "rgba(255,255,255,0.15)",
-    alignItems: "center", justifyContent: "center", marginBottom: spacing.md,
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.35)",
+  heroContent: { flex: 1, justifyContent: "center", alignItems: "center", padding: spacing.xl, gap: spacing.xl, paddingTop: spacing.xxxl, paddingBottom: spacing.xl },
+
+  trustRow: { flexDirection: "row", gap: spacing.sm },
+  trustPill: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    backgroundColor: "rgba(255,255,255,0.16)",
+    paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: radius.pill,
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.25)",
   },
-  heroTitle: { color: "#FFFFFF", fontSize: 26, fontWeight: "700" },
-  heroSub: { color: "rgba(255,255,255,0.9)", fontSize: 14, marginTop: 4 },
+  trustPillText: { color: "#FFFFFF", fontSize: 12, fontWeight: "700" },
+  trustPillSub: { color: "rgba(255,255,255,0.75)", fontSize: 10 },
 
   form: { padding: spacing.xl, gap: spacing.md },
   roleRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.md },

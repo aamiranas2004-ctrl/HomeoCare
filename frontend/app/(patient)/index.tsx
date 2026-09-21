@@ -15,6 +15,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { makeStyles, spacing, radius } from "@/src/theme";
 import { apiJson, useAuth } from "@/src/api";
+import { ClinicLogo } from "@/src/components/clinic-logo";
 
 type SiteContent = any;
 
@@ -70,28 +71,48 @@ export default function PatientHome() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.hi}>Hello,</Text>
-            <Text style={styles.name} numberOfLines={1}>
-              {user?.name || "Patient"}
-            </Text>
-            {user?.uhid && (
-              <View style={styles.uhidBadge} testID="uhid-badge">
-                <Icon name="finger-print" size={12} color="#065F46" />
-                <Text style={styles.uhidTxt}>UHID: {user.uhid}</Text>
-              </View>
-            )}
+        {/* Branded top strip */}
+        <LinearGradient
+          colors={["#065F46", "#059669", "#10B981"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.brandStrip, { paddingTop: insets.top + spacing.md }]}
+        >
+          <View style={styles.brandRow}>
+            <ClinicLogo size={44} />
+            <View style={{ flex: 1, marginLeft: spacing.md }}>
+              <Text style={styles.brandName}>Agrawal Homeo Hall</Text>
+              <Text style={styles.brandTagline}>Personalized homeopathic care</Text>
+            </View>
+            <Pressable onPress={() => router.push("/(patient)/profile")} style={styles.avatar}>
+              {user?.picture ? (
+                <Image source={{ uri: user.picture }} style={{ width: 44, height: 44, borderRadius: 22 }} />
+              ) : (
+                <Icon name="person" size={22} color="#065F46" />
+              )}
+            </Pressable>
           </View>
-          <Pressable onPress={() => router.push("/(patient)/profile")} style={styles.avatar}>
-            {user?.picture ? (
-              <Image source={{ uri: user.picture }} style={{ width: 44, height: 44, borderRadius: 22 }} />
-            ) : (
-              <Icon name="person" size={22} color="#FFFFFF" />
-            )}
-          </Pressable>
-        </View>
+
+          <View style={styles.greetCard}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.hi}>Hello,</Text>
+              <Text style={styles.name} numberOfLines={1}>
+                {user?.name || "Patient"}
+              </Text>
+              {user?.uhid && (
+                <View style={styles.uhidBadge} testID="uhid-badge">
+                  <Icon name="finger-print" size={12} color="#065F46" />
+                  <Text style={styles.uhidTxt}>UHID: {user.uhid}</Text>
+                </View>
+              )}
+            </View>
+            <View style={styles.miniStats}>
+              <MiniStat value={`${site.clinic.experience_years}+`} label="Years" />
+              <View style={styles.miniDivider} />
+              <MiniStat value={`${site.clinic.happy_patients}+`} label="Patients" />
+            </View>
+          </View>
+        </LinearGradient>
 
         {/* Featured card */}
         <View style={styles.hero}>
@@ -272,6 +293,16 @@ function SectionTitle({ title }: { title: string }) {
   return <Text style={styles.sectionTitle}>{title}</Text>;
 }
 
+function MiniStat({ value, label }: { value: string; label: string }) {
+  const styles = useStyles();
+  return (
+    <View style={{ alignItems: "center" }}>
+      <Text style={styles.miniStatValue}>{value}</Text>
+      <Text style={styles.miniStatLabel}>{label}</Text>
+    </View>
+  );
+}
+
 function QuickAction({ icon, label, onPress, testID }: any) {
   const styles = useStyles();
   return (
@@ -288,22 +319,36 @@ const useStyles = makeStyles((c) => ({
   root: { flex: 1, backgroundColor: c.surface },
   loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: c.surface },
 
-  header: {
-    flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md, gap: spacing.md, backgroundColor: c.surface,
+  brandStrip: {
+    paddingHorizontal: spacing.lg, paddingBottom: spacing.xl,
+    borderBottomLeftRadius: 24, borderBottomRightRadius: 24,
   },
-  hi: { color: c.muted, fontSize: 13 },
-  name: { color: c.onSurface, fontSize: 20, fontWeight: "700" },
+  brandRow: { flexDirection: "row", alignItems: "center" },
+  brandName: { color: "#FFFFFF", fontWeight: "800", fontSize: 16, letterSpacing: -0.2 },
+  brandTagline: { color: "rgba(255,255,255,0.85)", fontSize: 11, marginTop: 2 },
+  avatar: {
+    width: 44, height: 44, borderRadius: 22, backgroundColor: "#FFFFFF",
+    alignItems: "center", justifyContent: "center", overflow: "hidden",
+    borderWidth: 2, borderColor: "rgba(255,255,255,0.4)",
+  },
+  greetCard: {
+    marginTop: spacing.lg, backgroundColor: "rgba(255,255,255,0.15)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.25)",
+    borderRadius: radius.lg, padding: spacing.md,
+    flexDirection: "row", alignItems: "center", gap: spacing.md,
+  },
+  hi: { color: "rgba(255,255,255,0.85)", fontSize: 12, fontWeight: "600" },
+  name: { color: "#FFFFFF", fontSize: 20, fontWeight: "800", marginTop: 2 },
   uhidBadge: {
     flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start",
-    backgroundColor: c.brandTertiary, paddingHorizontal: 10, paddingVertical: 4,
+    backgroundColor: "#FFFFFF", paddingHorizontal: 10, paddingVertical: 4,
     borderRadius: radius.pill, marginTop: 6,
   },
-  uhidTxt: { color: c.onBrandTertiary, fontSize: 11, fontWeight: "700" },
-  avatar: {
-    width: 44, height: 44, borderRadius: 22, backgroundColor: c.brandPrimary,
-    alignItems: "center", justifyContent: "center", overflow: "hidden",
-  },
+  uhidTxt: { color: "#065F46", fontSize: 11, fontWeight: "800" },
+  miniStats: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingHorizontal: spacing.sm },
+  miniDivider: { width: 1, height: 24, backgroundColor: "rgba(255,255,255,0.35)" },
+  miniStatValue: { color: "#FFFFFF", fontSize: 15, fontWeight: "800" },
+  miniStatLabel: { color: "rgba(255,255,255,0.85)", fontSize: 10, fontWeight: "600" },
 
   hero: { margin: spacing.lg, borderRadius: radius.lg, overflow: "hidden", height: 200 },
   heroImg: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
