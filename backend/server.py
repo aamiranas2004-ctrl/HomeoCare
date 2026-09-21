@@ -383,6 +383,7 @@ async def site_content():
             "name": "Dr. Sonima Agrawal",
             "qualification": "BHMS",
             "experience": "14+ Years",
+            "photo_url": "https://agrawalhomeohall.com/wp-content/uploads/2026/06/ChatGPT-Image-Jun-23-2026-11_17_26-AM-682x1024.png",
             "bio": (
                 "Dr. Sonima Agrawal (BHMS) is a dedicated homeopathic physician committed to providing "
                 "personalized and compassionate healthcare for patients of all ages. With over 14 years of "

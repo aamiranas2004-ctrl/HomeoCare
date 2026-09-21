@@ -106,11 +106,6 @@ export default function PatientHome() {
                 </View>
               )}
             </View>
-            <View style={styles.miniStats}>
-              <MiniStat value={`${site.clinic.experience_years}+`} label="Years" />
-              <View style={styles.miniDivider} />
-              <MiniStat value={`${site.clinic.happy_patients}+`} label="Patients" />
-            </View>
           </View>
         </LinearGradient>
 
@@ -200,9 +195,12 @@ export default function PatientHome() {
         {/* About Doctor */}
         <SectionTitle title="Meet Your Doctor" />
         <View style={styles.doctorCard}>
-          <View style={styles.doctorAvatar}>
-            <Icon name="medical" size={28} color="#FFFFFF" />
-          </View>
+          <Image
+            source={{ uri: site.doctor.photo_url }}
+            style={styles.doctorAvatarImg}
+            contentFit="cover"
+            contentPosition={{ top: "12%" }}
+          />
           <View style={{ flex: 1 }}>
             <Text style={styles.doctorName}>{site.doctor.name}</Text>
             <Text style={styles.doctorMeta}>
@@ -393,6 +391,9 @@ const useStyles = makeStyles((c) => ({
   doctorAvatar: {
     width: 56, height: 56, borderRadius: 28, backgroundColor: c.brandSecondary,
     alignItems: "center", justifyContent: "center",
+  },
+  doctorAvatarImg: {
+    width: 56, height: 56, borderRadius: 28, backgroundColor: c.surfaceTertiary,
   },
   doctorName: { color: c.onSurface, fontWeight: "700", fontSize: 15 },
   doctorMeta: { color: c.muted, fontSize: 12, marginTop: 2 },

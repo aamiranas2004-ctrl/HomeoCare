@@ -73,7 +73,7 @@ export default function DoctorQueue() {
               onPress={() => router.push("/(doctor)/profile")}
               style={styles.avatarBtn}
             >
-              <Image source={{ uri: DOCTOR_PHOTO }} style={styles.avatarImg} contentFit="cover" />
+              <Image source={{ uri: DOCTOR_PHOTO }} style={styles.avatarImg} contentFit="cover" contentPosition={{ top: "12%" }} />
             </Pressable>
           </View>
 

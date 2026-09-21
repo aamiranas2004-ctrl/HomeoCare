@@ -8,6 +8,7 @@ import { View, StyleSheet } from "react-native";
 import { Image } from "expo-image";
 
 const LOGO = require("../../assets/images/clinic-logo.png");
+const LOGO_ICON = require("../../assets/images/clinic-logo-icon.png");
 
 type Props = {
   size?: number;
@@ -29,13 +30,12 @@ export function ClinicLogo({ size = 48, showWordmark = false }: Props) {
       </View>
     );
   }
-  // Icon-only crop (square). The PNG contains generous padding; we render the
-  // whole logo in a circular container so the mark reads well at small sizes.
+  // Icon-only mark: pre-cropped square PNG, centered in the white circle.
   return (
     <View style={[styles.badge, { width: size, height: size, borderRadius: size / 2 }]}>
       <Image
-        source={LOGO}
-        style={{ width: size * 1.35, height: size * 1.35, marginLeft: -size * 0.85 }}
+        source={LOGO_ICON}
+        style={{ width: size * 0.86, height: size * 0.86 }}
         contentFit="contain"
       />
     </View>

@@ -182,7 +182,7 @@ export default function LoginScreen() {
                   <Text style={styles.tagline}>Personalized homeopathic care · Ranchi</Text>
                 </View>
                 <View style={styles.docAvatar} testID="doc-avatar">
-                  <Image source={{ uri: DOCTOR_PHOTO }} style={styles.docImg} contentFit="cover" />
+                  <Image source={{ uri: DOCTOR_PHOTO }} style={styles.docImg} contentFit="cover" contentPosition={{ top: "12%" }} />
                   <View style={styles.docBadge}>
                     <Icon name="checkmark-circle" size={12} color="#FFFFFF" />
                   </View>
