@@ -1,11 +1,17 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, ScrollView, Pressable, ActivityIndicator, RefreshControl, TextInput } from "react-native";
+import { Image } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
 import Icon from "@react-native-vector-icons/ionicons";
 import { useRouter } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { makeStyles, spacing, radius } from "@/src/theme";
 import { apiJson, useAuth } from "@/src/api";
+import { ClinicLogo } from "@/src/components/clinic-logo";
+
+const DOCTOR_PHOTO =
+  "https://agrawalhomeohall.com/wp-content/uploads/2026/06/ChatGPT-Image-Jun-23-2026-11_17_26-AM-682x1024.png";
 
 export default function DoctorQueue() {
   const styles = useStyles();
@@ -48,23 +54,50 @@ export default function DoctorQueue() {
   const completed = items.filter((a) => a.status === "completed").length;
 
   return (
-    <SafeAreaView edges={["top"]} style={styles.safe} testID="doctor-queue">
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.hi}>Welcome back,</Text>
-          <Text style={styles.name}>{user?.name}</Text>
-        </View>
-        <View style={styles.stats}>
-          <View style={styles.statBox}>
-            <Text style={styles.statN}>{waiting}</Text>
-            <Text style={styles.statL}>Waiting</Text>
+    <View style={styles.safe} testID="doctor-queue">
+      <SafeAreaView edges={["top"]} style={{ backgroundColor: "transparent" }}>
+        <LinearGradient
+          colors={["#065F46", "#059669", "#10B981"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.brandStrip}
+        >
+          <View style={styles.brandRow}>
+            <ClinicLogo size={40} />
+            <View style={{ flex: 1, marginLeft: spacing.md }}>
+              <Text style={styles.brandName}>Agrawal Homeo Hall</Text>
+              <Text style={styles.brandTagline}>Doctor Console · Ranchi</Text>
+            </View>
+            <Pressable
+              testID="profile-btn"
+              onPress={() => router.push("/(doctor)/profile")}
+              style={styles.avatarBtn}
+            >
+              <Image source={{ uri: DOCTOR_PHOTO }} style={styles.avatarImg} contentFit="cover" />
+            </Pressable>
           </View>
-          <View style={[styles.statBox, { backgroundColor: "#EFF6FF" }]}>
-            <Text style={[styles.statN, { color: "#1D4ED8" }]}>{completed}</Text>
-            <Text style={styles.statL}>Done</Text>
+
+          <View style={styles.greetRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.hi}>Welcome back,</Text>
+              <Text style={styles.name}>{user?.name}</Text>
+              <Text style={styles.credentials}>
+                {user?.qualification || "BHMS"} • {user?.specialization || "Homeopathic Physician"}
+              </Text>
+            </View>
+            <View style={styles.statsRow}>
+              <View style={styles.statBox}>
+                <Text style={styles.statN}>{waiting}</Text>
+                <Text style={styles.statL}>Waiting</Text>
+              </View>
+              <View style={styles.statBox}>
+                <Text style={styles.statN}>{completed}</Text>
+                <Text style={styles.statL}>Done</Text>
+              </View>
+            </View>
           </View>
-        </View>
-      </View>
+        </LinearGradient>
+      </SafeAreaView>
 
       {loading ? (
         <View style={styles.loading}><ActivityIndicator size="large" color="#059669" /></View>
@@ -180,22 +213,43 @@ export default function DoctorQueue() {
           )}
         </ScrollView>
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
 const useStyles = makeStyles((c) => ({
   safe: { flex: 1, backgroundColor: c.surface },
-  header: {
-    padding: spacing.lg, flexDirection: "row", alignItems: "center", gap: spacing.md,
-    borderBottomWidth: 1, borderBottomColor: c.divider,
+  brandStrip: {
+    paddingHorizontal: spacing.lg, paddingBottom: spacing.xl,
+    borderBottomLeftRadius: 24, borderBottomRightRadius: 24,
   },
-  hi: { color: c.muted, fontSize: 12 },
-  name: { color: c.onSurface, fontSize: 18, fontWeight: "700" },
-  stats: { flexDirection: "row", gap: spacing.sm, marginLeft: "auto" },
-  statBox: { backgroundColor: c.brandTertiary, borderRadius: radius.md, paddingVertical: 6, paddingHorizontal: 12, alignItems: "center", minWidth: 60 },
-  statN: { color: c.onBrandTertiary, fontSize: 18, fontWeight: "800" },
-  statL: { color: c.muted, fontSize: 10 },
+  brandRow: { flexDirection: "row", alignItems: "center" },
+  brandName: { color: "#FFFFFF", fontWeight: "800", fontSize: 16, letterSpacing: -0.2 },
+  brandTagline: { color: "rgba(255,255,255,0.85)", fontSize: 11, marginTop: 2 },
+  avatarBtn: {
+    width: 48, height: 48, borderRadius: 24, overflow: "hidden",
+    borderWidth: 2, borderColor: "rgba(255,255,255,0.5)",
+    backgroundColor: "#FFFFFF",
+  },
+  avatarImg: { width: 48, height: 48, borderRadius: 24 },
+  greetRow: {
+    marginTop: spacing.lg,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.25)",
+    borderRadius: radius.lg, padding: spacing.md,
+    flexDirection: "row", alignItems: "center", gap: spacing.md,
+  },
+  hi: { color: "rgba(255,255,255,0.85)", fontSize: 12, fontWeight: "600" },
+  name: { color: "#FFFFFF", fontSize: 20, fontWeight: "800", marginTop: 2 },
+  credentials: { color: "rgba(255,255,255,0.85)", fontSize: 11, marginTop: 4 },
+  statsRow: { flexDirection: "row", gap: spacing.sm },
+  statBox: {
+    backgroundColor: "rgba(255,255,255,0.18)",
+    borderRadius: radius.md, paddingVertical: 8, paddingHorizontal: 12, alignItems: "center",
+    minWidth: 60, borderWidth: 1, borderColor: "rgba(255,255,255,0.25)",
+  },
+  statN: { color: "#FFFFFF", fontSize: 18, fontWeight: "800" },
+  statL: { color: "rgba(255,255,255,0.85)", fontSize: 10 },
 
   section: { color: c.onSurface, fontWeight: "700", fontSize: 14 },
   loading: { flex: 1, alignItems: "center", justifyContent: "center" },

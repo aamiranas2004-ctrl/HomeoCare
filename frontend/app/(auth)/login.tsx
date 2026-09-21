@@ -23,6 +23,9 @@ import { ClinicLogo } from "@/src/components/clinic-logo";
 const HERO_IMG =
   "https://images.unsplash.com/photo-1512069772995-ec65ed45afd6?crop=entropy&cs=srgb&fm=jpg&q=85&w=1080";
 
+const DOCTOR_PHOTO =
+  "https://agrawalhomeohall.com/wp-content/uploads/2026/06/ChatGPT-Image-Jun-23-2026-11_17_26-AM-682x1024.png";
+
 type Mode = "phone" | "otp";
 
 export default function LoginScreen() {
@@ -170,7 +173,25 @@ export default function LoginScreen() {
               style={styles.heroScrim}
             />
             <View style={styles.heroContent}>
-              <ClinicLogo size={92} showWordmark />
+              <View style={styles.brandRow}>
+                <ClinicLogo size={68} />
+                <View style={{ flex: 1, alignItems: "center" }}>
+                  <Text style={styles.wordmark}>
+                    Agrawal <Text style={styles.wordmarkAccent}>Homeo Hall</Text>
+                  </Text>
+                  <Text style={styles.tagline}>Personalized homeopathic care · Ranchi</Text>
+                </View>
+                <View style={styles.docAvatar} testID="doc-avatar">
+                  <Image source={{ uri: DOCTOR_PHOTO }} style={styles.docImg} contentFit="cover" />
+                  <View style={styles.docBadge}>
+                    <Icon name="checkmark-circle" size={12} color="#FFFFFF" />
+                  </View>
+                </View>
+              </View>
+              <View style={styles.docCard}>
+                <Text style={styles.docName}>Dr. Sonima Agrawal</Text>
+                <Text style={styles.docTitle}>BHMS · Homeopathic Physician · 14+ yrs</Text>
+              </View>
               <View style={styles.trustRow}>
                 <TrustPill icon="star" text="5.0" sub="2000+ reviews" />
                 <TrustPill icon="ribbon" text="14+ yrs" sub="Experience" />
@@ -364,6 +385,29 @@ const useStyles = makeStyles((c) => ({
   },
   trustPillText: { color: "#FFFFFF", fontSize: 12, fontWeight: "700" },
   trustPillSub: { color: "rgba(255,255,255,0.75)", fontSize: 10 },
+
+  brandRow: { flexDirection: "row", alignItems: "center", width: "100%", gap: spacing.md },
+  wordmark: { color: "#FFFFFF", fontSize: 22, fontWeight: "800", letterSpacing: -0.3, textAlign: "center" },
+  wordmarkAccent: { color: "#D1FAE5" },
+  tagline: { color: "rgba(255,255,255,0.85)", fontSize: 11, fontWeight: "600", marginTop: 2, textAlign: "center" },
+  docAvatar: {
+    width: 68, height: 68, borderRadius: 34, overflow: "hidden",
+    borderWidth: 3, borderColor: "rgba(255,255,255,0.6)", backgroundColor: "#FFFFFF",
+  },
+  docImg: { width: 62, height: 62, borderRadius: 31 },
+  docBadge: {
+    position: "absolute", bottom: -1, right: -1, width: 22, height: 22, borderRadius: 11,
+    backgroundColor: "#059669", borderWidth: 2, borderColor: "#FFFFFF",
+    alignItems: "center", justifyContent: "center",
+  },
+  docCard: {
+    width: "100%",
+    backgroundColor: "rgba(255,255,255,0.14)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.28)",
+    borderRadius: radius.md, padding: spacing.md, alignItems: "center",
+  },
+  docName: { color: "#FFFFFF", fontWeight: "800", fontSize: 16 },
+  docTitle: { color: "rgba(255,255,255,0.85)", fontSize: 11, marginTop: 2 },
 
   form: { padding: spacing.xl, gap: spacing.md },
   roleRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.md },
