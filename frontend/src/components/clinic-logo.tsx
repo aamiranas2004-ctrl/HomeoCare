@@ -1,140 +1,58 @@
 /**
- * Agrawal Homeo Hall — clinic logo monogram.
- * Composed from React Native primitives (no SVG dep). Renders a green
- * medallion with an "A" mark, a leaf accent (for homeopathy), and an
- * optional wordmark below.
+ * Agrawal Homeo Hall — official logo.
+ * Uses the print-ready PNG shipped by the clinic. When `showWordmark` is true
+ * the full logo is used; otherwise the icon-only mark (square crop).
  */
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
-import Icon from "@react-native-vector-icons/ionicons";
-import { LinearGradient } from "expo-linear-gradient";
+import { View, StyleSheet } from "react-native";
+import { Image } from "expo-image";
 
-import { useTheme } from "@/src/theme";
+const LOGO = require("../../assets/images/clinic-logo.png");
 
 type Props = {
   size?: number;
   showWordmark?: boolean;
-  variant?: "light" | "dark"; // "light" = white text (for dark bg)
-  compact?: boolean;
+  variant?: "light" | "dark"; // kept for API compatibility (background is not tinted)
+  compact?: boolean;          // kept for API compatibility
 };
 
-export function ClinicLogo({ size = 72, showWordmark = false, variant = "light", compact = false }: Props) {
-  const { colors } = useTheme();
-  const onDark = variant === "light";
-  const monogramFontSize = Math.round(size * 0.44);
-  const badgeSize = Math.round(size * 0.32);
-
-  return (
-    <View style={[styles.wrap, compact && { flexDirection: "row", alignItems: "center", gap: 10 }]}>
-      <View
-        style={[
-          styles.medallion,
-          { width: size, height: size, borderRadius: size / 2 },
-        ]}
-      >
-        <LinearGradient
-          colors={["#10B981", "#059669", "#065F46"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[
-            StyleSheet.absoluteFillObject,
-            { borderRadius: size / 2 },
-          ]}
+export function ClinicLogo({ size = 48, showWordmark = false }: Props) {
+  if (showWordmark) {
+    // Full lockup (icon + wordmark + tagline). Aspect ~ 3:2.
+    return (
+      <View style={[styles.wrap, { width: size * 3.5, height: size * 1.8 }]}>
+        <Image
+          source={LOGO}
+          style={{ width: "100%", height: "100%" }}
+          contentFit="contain"
         />
-        <View
-          style={[
-            styles.innerRing,
-            { width: size - 6, height: size - 6, borderRadius: (size - 6) / 2 },
-          ]}
-        />
-        <Text
-          style={[
-            styles.monogram,
-            { fontSize: monogramFontSize, lineHeight: monogramFontSize * 1.02 },
-          ]}
-        >
-          A
-        </Text>
-        <View
-          style={[
-            styles.leafBadge,
-            {
-              width: badgeSize,
-              height: badgeSize,
-              borderRadius: badgeSize / 2,
-              right: -badgeSize * 0.15,
-              bottom: -badgeSize * 0.05,
-            },
-          ]}
-        >
-          <Icon name="leaf" size={Math.round(badgeSize * 0.55)} color="#FFFFFF" />
-        </View>
       </View>
-
-      {showWordmark && (
-        <View style={compact ? { alignItems: "flex-start" } : { alignItems: "center", marginTop: 12 }}>
-          <Text style={[styles.wordmark, { color: onDark ? "#FFFFFF" : colors.onSurface }]}>
-            Agrawal <Text style={[styles.wordmarkAccent, { color: onDark ? "#D1FAE5" : colors.brandPrimary }]}>Homeo Hall</Text>
-          </Text>
-          <Text
-            style={[
-              styles.wordmarkSub,
-              { color: onDark ? "rgba(255,255,255,0.75)" : colors.muted },
-            ]}
-          >
-            Personalized homeopathic care · Since 2010
-          </Text>
-        </View>
-      )}
+    );
+  }
+  // Icon-only crop (square). The PNG contains generous padding; we render the
+  // whole logo in a circular container so the mark reads well at small sizes.
+  return (
+    <View style={[styles.badge, { width: size, height: size, borderRadius: size / 2 }]}>
+      <Image
+        source={LOGO}
+        style={{ width: size * 1.35, height: size * 1.35, marginLeft: -size * 0.85 }}
+        contentFit="contain"
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { alignItems: "center" },
-  medallion: {
+  wrap: { alignItems: "center", justifyContent: "center" },
+  badge: {
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    overflow: "visible",
+    overflow: "hidden",
     shadowColor: "#065F46",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 14,
-    elevation: 8,
-  },
-  innerRing: {
-    position: "absolute",
-    borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.55)",
-  },
-  monogram: {
-    color: "#FFFFFF",
-    fontWeight: "800",
-    letterSpacing: -1,
-    textShadowColor: "rgba(0,0,0,0.15)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-    fontFamily: undefined,
-  },
-  leafBadge: {
-    position: "absolute",
-    backgroundColor: "#2563EB",
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  wordmark: {
-    fontSize: 22,
-    fontWeight: "800",
-    letterSpacing: -0.3,
-  },
-  wordmarkAccent: {
-    fontWeight: "800",
-  },
-  wordmarkSub: {
-    fontSize: 11,
-    fontWeight: "600",
-    marginTop: 2,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 6,
   },
 });

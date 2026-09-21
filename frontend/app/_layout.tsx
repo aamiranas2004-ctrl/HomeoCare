@@ -6,12 +6,13 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StatusBar } from "expo-status-bar";
 import * as WebBrowser from "expo-web-browser";
+import * as SecureStore from "expo-secure-store";
 import { useEffect } from "react";
 
 import { ErrorBoundary } from "@/src/components/error-boundary";
 import { queryClient } from "@/src/query-client";
 import { AuthProvider, useAuth } from "@/src/api";
-import { colors } from "@/src/theme";
+import { colors, setColorSchemeOverride } from "@/src/theme";
 
 LogBox.ignoreAllLogs(true);
 WebBrowser.maybeCompleteAuthSession();
@@ -54,6 +55,14 @@ function AuthGate() {
 }
 
 export default function RootLayout() {
+  useEffect(() => {
+    (async () => {
+      try {
+        const v = await SecureStore.getItemAsync("ahh_theme_override");
+        if (v === "dark" || v === "light") setColorSchemeOverride(v);
+      } catch {}
+    })();
+  }, []);
   return (
     <ErrorBoundary>
       <GestureHandlerRootView style={{ flex: 1 }}>

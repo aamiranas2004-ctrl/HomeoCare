@@ -177,6 +177,12 @@ export default function PatientHome() {
             onPress={() => router.push("/family")}
           />
           <QuickAction
+            icon="notifications"
+            label="Reminders"
+            testID="qa-reminders"
+            onPress={() => router.push("/reminders")}
+          />
+          <QuickAction
             icon="call"
             label="Call Clinic"
             testID="qa-call"

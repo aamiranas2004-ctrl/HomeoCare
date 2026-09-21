@@ -229,6 +229,22 @@ class ChatMessage(BaseModel):
     read_by_patient: bool = False
 
 
+class ReminderCreate(BaseModel):
+    kind: Literal["refill", "follow_up", "medication", "other"] = "medication"
+    title: str
+    note: Optional[str] = ""
+    remind_at: datetime  # ISO datetime — when the nudge is due
+    family_member_id: Optional[str] = None
+
+
+class Reminder(ReminderCreate):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    patient_id: str
+    family_member_name: Optional[str] = None
+    completed: bool = False
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 # ---------------------------------------------------------------------------
 # Auth helpers
 # ---------------------------------------------------------------------------
@@ -298,6 +314,8 @@ async def on_startup():
     await db.family_members.create_index("id", unique=True)
     await db.chat_messages.create_index("appointment_id")
     await db.chat_messages.create_index([("appointment_id", 1), ("created_at", 1)])
+    await db.reminders.create_index("patient_id")
+    await db.reminders.create_index([("patient_id", 1), ("remind_at", 1)])
 
     # Seed the clinic's doctor
     doctor = await db.users.find_one({"email": "dr.sonima@agrawalhomeohall.com"}, {"_id": 0})
@@ -976,6 +994,58 @@ async def delete_family(member_id: str, user: dict = Depends(get_current_user)):
     res = await db.family_members.delete_one({"id": member_id, "account_id": user["user_id"]})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Family member not found")
+    return {"success": True}
+
+
+# ---------------------------------------------------------------------------
+# Reminders (medication refills / follow-ups)
+# ---------------------------------------------------------------------------
+@api_router.get("/reminders", response_model=List[Reminder])
+async def list_reminders(user: dict = Depends(get_current_user)):
+    await require_role("patient", user)
+    rows = await db.reminders.find({"patient_id": user["user_id"]}, {"_id": 0}).sort("remind_at", 1).to_list(200)
+    return [Reminder(**r) for r in rows]
+
+
+@api_router.post("/reminders", response_model=Reminder)
+async def add_reminder(payload: ReminderCreate, user: dict = Depends(get_current_user)):
+    await require_role("patient", user)
+    fm_name = None
+    if payload.family_member_id:
+        fm = await db.family_members.find_one(
+            {"id": payload.family_member_id, "account_id": user["user_id"]}, {"_id": 0}
+        )
+        if not fm:
+            raise HTTPException(status_code=404, detail="Family member not found")
+        fm_name = fm["name"]
+
+    rem = Reminder(
+        patient_id=user["user_id"],
+        family_member_name=fm_name,
+        **payload.dict(),
+    )
+    await db.reminders.insert_one(rem.dict())
+    return rem
+
+
+@api_router.patch("/reminders/{rid}", response_model=Reminder)
+async def toggle_reminder(rid: str, user: dict = Depends(get_current_user)):
+    await require_role("patient", user)
+    row = await db.reminders.find_one({"id": rid, "patient_id": user["user_id"]}, {"_id": 0})
+    if not row:
+        raise HTTPException(status_code=404, detail="Reminder not found")
+    new_state = not row.get("completed", False)
+    await db.reminders.update_one({"id": rid}, {"$set": {"completed": new_state}})
+    row["completed"] = new_state
+    return Reminder(**row)
+
+
+@api_router.delete("/reminders/{rid}")
+async def delete_reminder(rid: str, user: dict = Depends(get_current_user)):
+    await require_role("patient", user)
+    res = await db.reminders.delete_one({"id": rid, "patient_id": user["user_id"]})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Reminder not found")
     return {"success": True}
 
 
