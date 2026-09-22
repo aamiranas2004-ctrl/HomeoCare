@@ -318,12 +318,12 @@ export default function LoginScreen() {
                 {devOtp ? (
                   <View style={styles.devHint} testID="dev-otp-hint">
                     <Icon name="information-circle" size={14} color="#065F46" />
-                    <Text style={styles.devHintTxt}>Dev OTP: {devOtp}  •  (or use 123456)</Text>
+                    <Text style={styles.devHintTxt}>Dev OTP: {devOtp}</Text>
                   </View>
                 ) : (
                   <View style={styles.devHint} testID="sms-otp-hint">
                     <Icon name="chatbubble-ellipses" size={14} color="#065F46" />
-                    <Text style={styles.devHintTxt}>SMS sent via MSG91. Backup code: 123456</Text>
+                    <Text style={styles.devHintTxt}>OTP sent via SMS to your phone</Text>
                   </View>
                 )}
                 <View style={styles.inputWrap}>

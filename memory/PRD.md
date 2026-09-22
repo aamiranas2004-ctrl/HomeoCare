@@ -57,6 +57,15 @@ portal that the website itself does not have.
 - UI: patient sees a **Chat with doctor** button on every appointment card; doctor sees **Chat with patient** on every queue card. Both show the unread count inline. Full chat screen polls every 4 seconds and auto-scrolls.
 - Permissions: only the two participants (appointment.patient_id and doctor_id) can read or send; anyone else gets 403. Missing bearer → 401. Empty / whitespace / >2000 chars → 400.
 
+## ⚠️ PRE-PUBLISH SECURITY CHECKLIST (from security audit)
+Before clicking Publish, do ALL of these in **Deployment Panel → Secrets**:
+1. Set `MSG91_TEMPLATE_ID` = your DLT-approved MSG91 template id (and `MSG91_SENDER_ID` if approved).
+2. **DELETE the `ALLOW_DEV_OTP` secret** (or set it to anything other than `1`). While it's on, the login code is echoed in the API response and anyone can log in as the doctor.
+3. Optionally trim `TEST_OTP_PHONES` (the `123456` code only works for those two test numbers — safe to leave, but remove them if you don't need test logins).
+4. After saving secrets → **Re-deploy**. Then verify: request OTP for any phone → response must contain no `otp_dev` field, and a real SMS should arrive.
+
+Audit status: all code-level findings fixed (universal OTP gated to test phones, rate limits 5 req/hr + 6 fails/10min, CORS allowlist, Bearer-only file access, no query-string tokens). Launch is blocked ONLY until steps 1–2 above are done.
+
 ## Known simplifications (upgrade in later iterations)
 - **MSG91 SMS OTP wired** ✅ with `AUTHKEY`. Waiting on user's DLT-approved
   `TEMPLATE_ID` — until then backend falls back to dev-mode OTP and the universal

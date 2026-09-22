@@ -51,6 +51,27 @@ MSG91_SENDER_ID = (os.environ.get("MSG91_SENDER_ID") or "").strip()
 MSG91_DEFAULT_CC = (os.environ.get("MSG91_DEFAULT_COUNTRY_CODE") or "91").strip()
 MSG91_ENABLED = bool(MSG91_AUTHKEY and MSG91_TEMPLATE_ID)
 
+# Dev-mode OTP gate: when "1", the backend may echo OTPs in API responses for
+# local preview testing. MUST be unset/removed in production.
+ALLOW_DEV_OTP = os.environ.get("ALLOW_DEV_OTP") == "1"
+# Comma-separated phones for which the universal test OTP 123456 works.
+# Used only by automated tests; never add real numbers here.
+TEST_OTP_PHONES = {p.strip() for p in (os.environ.get("TEST_OTP_PHONES") or "").split(",") if p.strip()}
+
+# In-memory OTP rate limiting (single-process backend)
+_otp_request_log: dict = {}   # phone -> [timestamps]
+_otp_verify_fail: dict = {}   # phone -> [timestamps]
+
+def _rate_ok(bucket: dict, key: str, limit: int, window_seconds: int) -> bool:
+    now = datetime.now(timezone.utc).timestamp()
+    stamps = [t for t in bucket.get(key, []) if now - t < window_seconds]
+    if len(stamps) >= limit:
+        bucket[key] = stamps
+        return False
+    stamps.append(now)
+    bucket[key] = stamps
+    return True
+
 client = AsyncIOMotorClient(mongo_url)
 db = client[DB_NAME]
 
@@ -354,9 +375,11 @@ async def on_startup():
 
     if MSG91_ENABLED:
         logger.info(f"MSG91 SMS OTP ENABLED (template={MSG91_TEMPLATE_ID[:6]}...) sender={MSG91_SENDER_ID or '(default)'}")
+    elif ALLOW_DEV_OTP:
+        logger.warning("MSG91 disabled and ALLOW_DEV_OTP=1 — dev-mode OTP echo active. REMOVE before production deploy.")
     else:
         reason = "no AUTHKEY" if not MSG91_AUTHKEY else "no TEMPLATE_ID (waiting on DLT approval)"
-        logger.warning(f"MSG91 disabled ({reason}). Using dev-mode OTP with 123456 fallback.")
+        logger.warning(f"MSG91 disabled ({reason}) and dev OTP off — phone login will return 503 until SMS is configured.")
 
 
 # ---------------------------------------------------------------------------
@@ -513,6 +536,10 @@ async def request_otp(payload: PhoneOtpRequest):
         raise HTTPException(status_code=400, detail="Invalid phone number")
     stored_phone = f"+{digits}"
 
+    # Rate limit: max 5 OTP requests per phone per hour
+    if not _rate_ok(_otp_request_log, stored_phone, 5, 3600):
+        raise HTTPException(status_code=429, detail="Too many OTP requests. Try again later.")
+
     if MSG91_ENABLED:
         # Delegate OTP generation + SMS delivery to MSG91.
         try:
@@ -542,12 +569,16 @@ async def request_otp(payload: PhoneOtpRequest):
                 )
                 logger.info(f"MSG91 OTP sent to {stored_phone}")
                 return {"success": True, "provider": "msg91",
-                        "message": "OTP sent via SMS. Enter 123456 as emergency backup if you don't receive it."}
+                        "message": "OTP sent via SMS."}
             logger.warning(f"MSG91 send failed ({resp.status_code}): {data}. Falling back to dev OTP.")
         except Exception as e:
             logger.warning(f"MSG91 request error: {e}. Falling back to dev OTP.")
 
-    # DEV / fallback path
+    # DEV / fallback path — only allowed when ALLOW_DEV_OTP=1 (local preview).
+    if not ALLOW_DEV_OTP:
+        logger.error(f"SMS provider unavailable and ALLOW_DEV_OTP is off; rejecting OTP request for {stored_phone}")
+        raise HTTPException(status_code=503, detail="SMS service unavailable. Please try again later.")
+
     otp = f"{random.randint(100000, 999999)}"
     await db.otp_codes.update_one(
         {"phone": stored_phone},
@@ -561,7 +592,7 @@ async def request_otp(payload: PhoneOtpRequest):
     )
     logger.info(f"DEV OTP for {stored_phone}: {otp}")
     return {"success": True, "provider": "dev", "otp_dev": otp,
-            "message": "OTP sent (dev mode returns OTP). Universal fallback: 123456"}
+            "message": "OTP sent (dev mode returns OTP)"}
 
 
 @api_router.post("/auth/otp/verify")
@@ -579,8 +610,12 @@ async def verify_otp(payload: PhoneOtpVerify):
     row = await db.otp_codes.find_one({"phone": stored_phone}, {"_id": 0})
     valid = False
 
-    # Universal emergency fallback (documented, keeps the app usable during MSG91 setup)
-    if payload.otp == "123456":
+    # Rate limit: max 6 failed verify attempts per phone per 10 minutes
+    if not _rate_ok(_otp_verify_fail, stored_phone, 6, 600):
+        raise HTTPException(status_code=429, detail="Too many attempts. Try again later.")
+
+    # Universal test OTP — ONLY for explicitly whitelisted test phone numbers.
+    if payload.otp == "123456" and stored_phone in TEST_OTP_PHONES:
         valid = True
 
     if not valid and row:
@@ -914,13 +949,7 @@ async def files_for_patient(patient_id: str, user: dict = Depends(get_current_us
 
 
 @api_router.get("/files/{file_id}/content")
-async def file_content(file_id: str, token: Optional[str] = None,
-                       authorization: Optional[str] = Header(None)):
-    # Allow token via query for web <img> tags
-    bearer = authorization
-    if not bearer and token:
-        bearer = f"Bearer {token}"
-    user = await get_current_user(bearer)
+async def file_content(file_id: str, user: dict = Depends(get_current_user)):
     row = await db.files.find_one({"id": file_id}, {"_id": 0})
     if not row:
         raise HTTPException(status_code=404, detail="Not found")
@@ -1073,10 +1102,18 @@ async def delete_reminder(rid: str, user: dict = Depends(get_current_user)):
 # ---------------------------------------------------------------------------
 app.include_router(api_router)
 
+CORS_ORIGINS = [
+    o.strip() for o in (os.environ.get("CORS_ORIGINS") or "").split(",") if o.strip()
+] or [
+    "https://homeo-appointments-6.preview.emergentagent.com",
+    "http://localhost:8081",
+    "http://localhost:19006",
+]
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
