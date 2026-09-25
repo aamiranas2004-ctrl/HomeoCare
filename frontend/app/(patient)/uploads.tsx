@@ -8,7 +8,7 @@ import * as DocumentPicker from "expo-document-picker";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { makeStyles, spacing, radius } from "@/src/theme";
-import { API, apiJson, useAuth } from "@/src/api";
+import { API, apiFetch, apiJson, useAuth } from "@/src/api";
 
 export default function UploadsScreen() {
   const styles = useStyles();
@@ -111,6 +111,27 @@ export default function UploadsScreen() {
     } catch (e: any) { setStatusMsg(e?.message || "Document pick failed"); }
   };
 
+  const viewFile = async (f: any) => {
+    try {
+      setStatusMsg(null);
+      const res = await apiFetch(`/files/${f.id}/content`);
+      if (!res.ok) throw new Error(`Could not open file (HTTP ${res.status})`);
+      const blob = await res.blob();
+
+      if (Platform.OS === "web") {
+        const url = URL.createObjectURL(blob);
+        window.open(url, "_blank", "noopener,noreferrer");
+        window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+      } else {
+        // Native viewer support will be added with the device build; keep the
+        // authenticated read test explicit instead of exposing the private R2 URL.
+        Alert.alert("File retrieved", `${f.filename} was securely retrieved from storage.`);
+      }
+    } catch (e: any) {
+      setStatusMsg(e?.message || "Could not open file");
+    }
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
     await load();
@@ -211,7 +232,7 @@ export default function UploadsScreen() {
           </View>
         ) : (
           items.map((f) => (
-            <View key={f.id} style={styles.fileCard} testID={`file-${f.id}`}>
+            <Pressable key={f.id} onPress={() => viewFile(f)} style={styles.fileCard} testID={`file-${f.id}`}>
               <View style={styles.fileIcon}>
                 <Icon
                   name={f.content_type?.includes("pdf") ? "document-text" : "image"}
@@ -234,7 +255,11 @@ export default function UploadsScreen() {
                   <Text style={styles.pending}>Pending doctor review</Text>
                 )}
               </View>
-            </View>
+              <View style={styles.viewFile}>
+                <Icon name="eye-outline" size={16} color="#059669" />
+                <Text style={styles.viewFileTxt}>View File</Text>
+              </View>
+            </Pressable>
           ))
         )}
       </ScrollView>
@@ -294,6 +319,8 @@ const useStyles = makeStyles((c) => ({
     alignItems: "center", justifyContent: "center",
   },
   fileName: { color: c.onSurface, fontWeight: "700", fontSize: 14 },
+  viewFile: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "center" },
+  viewFileTxt: { color: c.brandPrimary, fontSize: 11, fontWeight: "700" },
   fileMeta: { color: c.muted, fontSize: 11, marginTop: 2, textTransform: "capitalize" },
   pending: { color: c.warning, fontSize: 11, fontWeight: "600", marginTop: 6 },
   replyBox: { backgroundColor: c.brandTertiary, borderRadius: radius.sm, padding: spacing.sm, marginTop: 6 },
