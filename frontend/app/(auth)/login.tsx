@@ -47,7 +47,6 @@ export default function LoginScreen() {
   // ------------------------------------------------------------------ Google
   useEffect(() => {
     const sub = Linking.addEventListener("url", ({ url }) => {
-      cachedUrl.current = url;
       processGoogleCallback(url);
     });
     (async () => {
@@ -57,22 +56,22 @@ export default function LoginScreen() {
     return () => sub.remove();
   }, []);
 
-  const extractSessionId = (url: string): string | null => {
-    const m = url.match(/[?#&]session_id=([^&#]+)/);
+  const extractAuthCode = (url: string): string | null => {
+    const m = url.match(/[?#&]auth_code=([^&#]+)/);
     return m ? decodeURIComponent(m[1]) : null;
   };
 
   const processGoogleCallback = async (url: string | null | undefined) => {
     if (!url) return;
-    const sid = extractSessionId(url);
-    if (!sid || processedSession.current.has(sid)) return;
-    processedSession.current.add(sid);
+    const code = extractAuthCode(url);
+    if (!code || processedSession.current.has(code)) return;
+    processedSession.current.add(code);
     setLoading(true);
     try {
-      const res = await fetch(`${API}/auth/session`, {
+      const res = await fetch(`${API}/auth/google/exchange`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sid }),
+        body: JSON.stringify({ code }),
       });
       if (!res.ok) throw new Error("Google auth failed");
       const data = await res.json();
@@ -81,7 +80,7 @@ export default function LoginScreen() {
         try {
           const u = new URL(window.location.href);
           u.hash = "";
-          u.searchParams.delete("session_id");
+          u.searchParams.delete("auth_code");
           window.history.replaceState(window.history.state, "", u.toString());
         } catch {}
       }
@@ -95,24 +94,21 @@ export default function LoginScreen() {
   const handleGoogle = async () => {
     setError(null);
     try {
-      const redirectUrl =
-        Platform.OS === "web" ? `${window.location.origin}/` : Linking.createURL("");
-      const authUrl = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
+      const returnUrl =
+        Platform.OS === "web" ? `${window.location.origin}/` : Linking.createURL("google-auth");
+      const authUrl = `${API}/auth/google/login?return_url=${encodeURIComponent(returnUrl)}`;
       if (Platform.OS === "web") {
         window.location.href = authUrl;
       } else {
-        const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUrl);
-        let url: string | null = null;
-        if (result.type === "success" && (result as any).url) url = (result as any).url;
-        if (!url) url = cachedUrl.current;
-        if (!url) url = await Linking.getInitialURL();
-        if (url) await processGoogleCallback(url);
+        const result = await WebBrowser.openAuthSessionAsync(authUrl, returnUrl);
+        if (result.type === "success" && (result as any).url) {
+          await processGoogleCallback((result as any).url);
+        }
       }
     } catch (e: any) {
       setError(e?.message || "Google login failed");
     }
   };
-
   // ------------------------------------------------------------------ Phone
   const handleRequestOtp = async () => {
     if (!phone.match(/^\+?\d{10,15}$/)) {
