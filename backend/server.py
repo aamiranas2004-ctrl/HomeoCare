@@ -53,6 +53,7 @@ R2_REGION = (os.environ.get("R2_REGION") or "auto").strip()
 # Clinic identity
 CLINIC_DOCTOR_PHONE = "+917294136264"          # only phone allowed to log in as doctor
 CLINIC_DOCTOR_PHONE_DISPLAY = "+91-7294136264"
+TEMP_DOCTOR_EMAILS = {"olivegreensolutionsranchi@gmail.com"}  # temporary doctor-side testing only
 
 # MSG91 SMS OTP config
 MSG91_AUTHKEY = (os.environ.get("MSG91_AUTHKEY") or "").strip()
@@ -385,7 +386,7 @@ async def on_startup():
     # (e.g. leftover from tests). Only the clinic phone may keep role=doctor.
     demote_res = await db.users.update_many(
         {"role": "doctor", "phone": {"$ne": CLINIC_DOCTOR_PHONE},
-         "email": {"$ne": "dr.sonima@agrawalhomeohall.com"}},
+         "email": {"$nin": ["dr.sonima@agrawalhomeohall.com", *TEMP_DOCTOR_EMAILS]}},
         {"$set": {"role": "patient"}},
     )
     if demote_res.modified_count:
@@ -570,10 +571,11 @@ async def google_callback(code: Optional[str] = None, state: Optional[str] = Non
             raise HTTPException(status_code=401, detail="Could not read Google profile")
         data = user_resp.json()
 
-    email = data.get("email")
+    email = (data.get("email") or "").strip().lower()
     if not email or data.get("email_verified") is not True:
         raise HTTPException(status_code=401, detail="A verified Google email is required")
 
+    is_temp_doctor = email in TEMP_DOCTOR_EMAILS
     existing = await db.users.find_one({"email": email}, {"_id": 0})
     if existing:
         user_id = existing["user_id"]
@@ -582,6 +584,9 @@ async def google_callback(code: Optional[str] = None, state: Optional[str] = Non
             updates["name"] = data["name"]
         if data.get("picture") and not existing.get("picture"):
             updates["picture"] = data["picture"]
+        if is_temp_doctor and existing.get("role") != "doctor":
+            updates["role"] = "doctor"
+            updates["specialization"] = "Temporary doctor test account"
         if updates:
             await db.users.update_one({"user_id": user_id}, {"$set": updates})
     else:
@@ -591,7 +596,8 @@ async def google_callback(code: Optional[str] = None, state: Optional[str] = Non
             "email": email,
             "name": data.get("name") or email.split("@")[0],
             "picture": data.get("picture"),
-            "role": "patient",
+            "role": "doctor" if is_temp_doctor else "patient",
+            "specialization": "Temporary doctor test account" if is_temp_doctor else None,
             "created_at": datetime.now(timezone.utc),
         })
 
