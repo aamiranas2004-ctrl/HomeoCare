@@ -53,7 +53,7 @@ R2_REGION = (os.environ.get("R2_REGION") or "auto").strip()
 # Clinic identity
 CLINIC_DOCTOR_PHONE = "+917294136264"          # only phone allowed to log in as doctor
 CLINIC_DOCTOR_PHONE_DISPLAY = "+91-7294136264"
-TEMP_DOCTOR_EMAILS = {"olivegreensolutionsranchi@gmail.com"}  # temporary doctor-side testing only
+TEMP_DOCTOR_EMAILS: set[str] = set()  # no temporary doctor accounts enabled
 
 # MSG91 SMS OTP config
 MSG91_AUTHKEY = (os.environ.get("MSG91_AUTHKEY") or "").strip()
