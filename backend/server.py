@@ -25,6 +25,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 import requests
+import boto3
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -34,11 +35,14 @@ load_dotenv(ROOT_DIR / ".env")
 # ---------------------------------------------------------------------------
 mongo_url = os.environ["MONGO_URL"]
 DB_NAME = os.environ["DB_NAME"]
-EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY")
 APP_NAME = os.environ.get("APP_NAME", "agrawal-homeo-hall")
 
-STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com"
-STORAGE_URL = STORAGE_BASE.rstrip("/") + "/objstore/api/v1/storage"
+# Cloudflare R2 private object storage
+R2_BUCKET_NAME = (os.environ.get("R2_BUCKET_NAME") or "").strip()
+R2_ENDPOINT_URL = (os.environ.get("R2_ENDPOINT_URL") or "").strip()
+R2_ACCESS_KEY_ID = (os.environ.get("R2_ACCESS_KEY_ID") or "").strip()
+R2_SECRET_ACCESS_KEY = (os.environ.get("R2_SECRET_ACCESS_KEY") or "").strip()
+R2_REGION = (os.environ.get("R2_REGION") or "auto").strip()
 
 # Clinic identity
 CLINIC_DOCTOR_PHONE = "+917294136264"          # only phone allowed to log in as doctor
@@ -82,46 +86,57 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Storage helpers (Emergent Managed Object Storage)
+# Storage helpers (Cloudflare R2 via S3-compatible API)
 # ---------------------------------------------------------------------------
-storage_key: Optional[str] = None
+_r2_client = None
 
 
 def init_storage_sync():
-    global storage_key
-    if storage_key:
-        return storage_key
-    if not EMERGENT_LLM_KEY:
-        raise RuntimeError("EMERGENT_LLM_KEY missing")
-    resp = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_LLM_KEY}, timeout=30)
-    resp.raise_for_status()
-    storage_key = resp.json()["storage_key"]
-    return storage_key
+    global _r2_client
+    if _r2_client is not None:
+        return _r2_client
+
+    missing = [
+        name for name, value in (
+            ("R2_BUCKET_NAME", R2_BUCKET_NAME),
+            ("R2_ENDPOINT_URL", R2_ENDPOINT_URL),
+            ("R2_ACCESS_KEY_ID", R2_ACCESS_KEY_ID),
+            ("R2_SECRET_ACCESS_KEY", R2_SECRET_ACCESS_KEY),
+        )
+        if not value
+    ]
+    if missing:
+        raise RuntimeError(f"Missing R2 configuration: {', '.join(missing)}")
+
+    _r2_client = boto3.client(
+        "s3",
+        endpoint_url=R2_ENDPOINT_URL,
+        aws_access_key_id=R2_ACCESS_KEY_ID,
+        aws_secret_access_key=R2_SECRET_ACCESS_KEY,
+        region_name=R2_REGION,
+    )
+    # Verify credentials, endpoint, bucket access, and network restrictions
+    # without exposing the bucket publicly.
+    _r2_client.head_bucket(Bucket=R2_BUCKET_NAME)
+    return _r2_client
 
 
 def put_object_sync(path: str, data: bytes, content_type: str) -> dict:
-    key = init_storage_sync()
-    resp = requests.put(
-        f"{STORAGE_URL}/objects/{path}",
-        headers={"X-Storage-Key": key, "Content-Type": content_type},
-        data=data,
-        timeout=120,
+    client = init_storage_sync()
+    client.put_object(
+        Bucket=R2_BUCKET_NAME,
+        Key=path,
+        Body=data,
+        ContentType=content_type,
     )
-    resp.raise_for_status()
-    return resp.json()
+    return {"path": path, "size": len(data)}
 
 
 def get_object_sync(path: str) -> tuple[bytes, str]:
-    global storage_key
-    key = init_storage_sync()
-    resp = requests.get(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key}, timeout=60)
-    if resp.status_code == 503:
-        storage_key = None
-        key = init_storage_sync()
-        resp = requests.get(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key}, timeout=60)
-    resp.raise_for_status()
-    return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
-
+    client = init_storage_sync()
+    response = client.get_object(Bucket=R2_BUCKET_NAME, Key=path)
+    body = response["Body"].read()
+    return body, response.get("ContentType", "application/octet-stream")
 
 # ---------------------------------------------------------------------------
 # Models
