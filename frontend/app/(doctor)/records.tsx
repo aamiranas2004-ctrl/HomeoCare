@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, ScrollView, ActivityIndicator, TextInput, Pressable, RefreshControl } from "react-native";
+import { View, Text, ScrollView, ActivityIndicator, TextInput, Pressable, RefreshControl, Platform, Alert } from "react-native";
 import Icon from "@react-native-vector-icons/ionicons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { makeStyles, spacing, radius } from "@/src/theme";
-import { apiJson } from "@/src/api";
+import { apiFetch, apiJson } from "@/src/api";
 
 export default function DoctorRecords() {
   const styles = useStyles();
@@ -16,6 +16,24 @@ export default function DoctorRecords() {
     try { setItems(await apiJson<any[]>("/files/mine")); } catch {} finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
+
+  const viewFile = async (f: any) => {
+    try {
+      const res = await apiFetch(`/files/${f.id}/content`);
+      if (!res.ok) throw new Error(`Could not open file (HTTP ${res.status})`);
+      const blob = await res.blob();
+      if (Platform.OS === "web") {
+        const url = URL.createObjectURL(blob);
+        window.open(url, "_blank", "noopener,noreferrer");
+        window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+      } else {
+        Alert.alert("File retrieved", `${f.filename} was securely retrieved from storage.`);
+      }
+    } catch (e: any) {
+      if (Platform.OS === "web") window.alert(e?.message || "Could not open file");
+      else Alert.alert("Could not open file", e?.message || "Please try again.");
+    }
+  };
 
   const sendReply = async (id: string) => {
     const val = editing[id] || "";
@@ -58,6 +76,10 @@ export default function DoctorRecords() {
                   <Text style={[styles.chipTxt, { color: f.status === "reviewed" ? "#1D4ED8" : "#92400E" }]}>{f.status.replace("_", " ")}</Text>
                 </View>
               </View>
+              <Pressable testID={`view-${f.id}`} onPress={() => viewFile(f)} style={styles.viewBtn}>
+                <Icon name="eye-outline" size={16} color="#059669" />
+                <Text style={styles.viewBtnTxt}>View File</Text>
+              </Pressable>
               {f.doctor_reply ? (
                 <View style={styles.doneBox}>
                   <Text style={styles.doneLbl}>Your reply</Text>
@@ -98,6 +120,8 @@ const useStyles = makeStyles((c) => ({
   meta: { color: c.muted, fontSize: 11, marginTop: 2, textTransform: "capitalize" },
   chip: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.pill },
   chipTxt: { fontSize: 10, fontWeight: "700", textTransform: "capitalize" },
+  viewBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 9, borderRadius: radius.sm, borderWidth: 1, borderColor: c.brandPrimary },
+  viewBtnTxt: { color: c.brandPrimary, fontSize: 12, fontWeight: "700" },
   doneBox: { backgroundColor: "#EFF6FF", padding: 10, borderRadius: radius.sm },
   doneLbl: { color: "#1D4ED8", fontSize: 11, fontWeight: "700" },
   doneTxt: { color: "#1E3A8A", fontSize: 12, marginTop: 2 },
