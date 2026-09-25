@@ -1,22 +1,22 @@
 {
   "expo": {
-    "name": "frontend",
-    "slug": "frontend",
+    "name": "Agrawal Homeo Hall",
+    "slug": "agrawal-homeo-hall",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
+    "scheme": "agrawalhomeohall",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.homeoappointments.yv5e4o"
+      "bundleIdentifier": "com.agrawalhomeohall.app"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
-      "package": "com.emergent.homeoappointments.yv5e4o"
+      "package": "com.agrawalhomeohall.app"
     },
     "web": {
       "bundler": "metro",
