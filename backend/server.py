@@ -1,15 +1,15 @@
 """
 Agrawal Homeo Hall - Mobile App Backend
 Full-stack FastAPI service for patient/doctor portal with:
-- Google OAuth (Emergent managed) + Phone OTP (dev mode)
+- Direct Google OAuth + Phone OTP
 - Role-based access (patient / doctor)
 - UHID generation for patients
 - Appointment booking
-- Prescription / test result uploads via Emergent Object Storage
+- Prescription / test result uploads via Cloudflare R2
 - Doctor consultation notes / replies
 """
 from fastapi import FastAPI, APIRouter, HTTPException, Header, UploadFile, File, Form, Depends
-from fastapi.responses import Response
+from fastapi.responses import Response, RedirectResponse
 from fastapi.concurrency import run_in_threadpool
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -21,6 +21,7 @@ import logging
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional, Literal
+from urllib.parse import urlencode, urlparse
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -36,6 +37,11 @@ load_dotenv(ROOT_DIR / ".env")
 mongo_url = os.environ["MONGO_URL"]
 DB_NAME = os.environ["DB_NAME"]
 APP_NAME = os.environ.get("APP_NAME", "agrawal-homeo-hall")
+
+# Direct Google OAuth (server-side authorization-code flow)
+GOOGLE_CLIENT_ID = (os.environ.get("GOOGLE_CLIENT_ID") or "").strip()
+GOOGLE_CLIENT_SECRET = (os.environ.get("GOOGLE_CLIENT_SECRET") or "").strip()
+GOOGLE_REDIRECT_URI = (os.environ.get("GOOGLE_REDIRECT_URI") or "").strip()
 
 # Cloudflare R2 private object storage
 R2_BUCKET_NAME = (os.environ.get("R2_BUCKET_NAME") or "").strip()
@@ -156,8 +162,8 @@ class User(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-class SessionRequest(BaseModel):
-    session_id: str
+class GoogleCodeExchange(BaseModel):
+    code: str
 
 
 class PhoneOtpRequest(BaseModel):
@@ -345,6 +351,10 @@ async def on_startup():
     await db.user_sessions.create_index("session_token", unique=True)
     await db.user_sessions.create_index("user_id")
     await db.user_sessions.create_index("expires_at", expireAfterSeconds=0)
+    await db.oauth_states.create_index("state", unique=True)
+    await db.oauth_states.create_index("expires_at", expireAfterSeconds=0)
+    await db.oauth_codes.create_index("code", unique=True)
+    await db.oauth_codes.create_index("expires_at", expireAfterSeconds=0)
     await db.appointments.create_index("patient_id")
     await db.appointments.create_index("doctor_id")
     await db.files.create_index("patient_id")
@@ -488,48 +498,133 @@ def _mint_session_token(user_id: str) -> dict:
             "created_at": datetime.now(timezone.utc)}
 
 
-@api_router.post("/auth/session")
-async def auth_session(payload: SessionRequest):
-    """Exchange Emergent session_id for our session_token (Google OAuth flow)."""
-    session_id = payload.session_id
-    try:
-        async with httpx.AsyncClient(timeout=15) as ac:
-            resp = await ac.get(
-                "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
-                headers={"X-Session-ID": session_id},
-            )
-    except Exception as e:
-        logger.error(f"Auth exchange failed: {e}")
-        raise HTTPException(status_code=401, detail="Auth exchange failed")
-    if resp.status_code != 200:
-        raise HTTPException(status_code=401, detail="Invalid session_id")
-    data = resp.json()
+@api_router.get("/auth/google/login")
+async def google_login(return_url: str):
+    """Start direct Google OAuth and remember a short-lived, validated app return URL."""
+    if not (GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URI):
+        raise HTTPException(status_code=503, detail="Google login is not configured")
+
+    parsed = urlparse(return_url)
+    allowed = (
+        parsed.scheme == "agrawalhomeohall"
+        or (parsed.scheme in ("http", "https") and parsed.hostname in ("agrawalhomeohall.com", "www.agrawalhomeohall.com", "localhost", "127.0.0.1"))
+    )
+    if not allowed:
+        raise HTTPException(status_code=400, detail="Invalid return URL")
+
+    state = uuid.uuid4().hex + uuid.uuid4().hex
+    await db.oauth_states.insert_one({
+        "state": state,
+        "return_url": return_url,
+        "expires_at": datetime.now(timezone.utc) + timedelta(minutes=10),
+        "created_at": datetime.now(timezone.utc),
+    })
+    params = {
+        "client_id": GOOGLE_CLIENT_ID,
+        "redirect_uri": GOOGLE_REDIRECT_URI,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "state": state,
+        "access_type": "online",
+        "prompt": "select_account",
+    }
+    return RedirectResponse("https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params))
+
+
+@api_router.get("/auth/google/callback")
+async def google_callback(code: Optional[str] = None, state: Optional[str] = None, error: Optional[str] = None):
+    """Google redirects here. Exchange its code, create/find the user, then return a one-time app code."""
+    if error:
+        raise HTTPException(status_code=400, detail=f"Google authentication failed: {error}")
+    if not code or not state:
+        raise HTTPException(status_code=400, detail="Missing Google authorization response")
+
+    state_row = await db.oauth_states.find_one_and_delete({"state": state})
+    if not state_row:
+        raise HTTPException(status_code=400, detail="Invalid or already-used OAuth state")
+    expires_at = state_row.get("expires_at")
+    if expires_at and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at and expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="OAuth state expired")
+
+    async with httpx.AsyncClient(timeout=20) as ac:
+        token_resp = await ac.post("https://oauth2.googleapis.com/token", data={
+            "code": code,
+            "client_id": GOOGLE_CLIENT_ID,
+            "client_secret": GOOGLE_CLIENT_SECRET,
+            "redirect_uri": GOOGLE_REDIRECT_URI,
+            "grant_type": "authorization_code",
+        })
+        if token_resp.status_code != 200:
+            logger.warning("Google token exchange failed with status %s", token_resp.status_code)
+            raise HTTPException(status_code=401, detail="Google token exchange failed")
+        access_token = token_resp.json().get("access_token")
+        if not access_token:
+            raise HTTPException(status_code=401, detail="Google did not return an access token")
+        user_resp = await ac.get(
+            "https://openidconnect.googleapis.com/v1/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        if user_resp.status_code != 200:
+            raise HTTPException(status_code=401, detail="Could not read Google profile")
+        data = user_resp.json()
+
     email = data.get("email")
-    if not email:
-        raise HTTPException(status_code=401, detail="No email in Emergent response")
+    if not email or data.get("email_verified") is not True:
+        raise HTTPException(status_code=401, detail="A verified Google email is required")
 
     existing = await db.users.find_one({"email": email}, {"_id": 0})
     if existing:
         user_id = existing["user_id"]
-        user_doc = existing
+        updates = {}
+        if data.get("name") and not existing.get("name"):
+            updates["name"] = data["name"]
+        if data.get("picture") and not existing.get("picture"):
+            updates["picture"] = data["picture"]
+        if updates:
+            await db.users.update_one({"user_id": user_id}, {"$set": updates})
     else:
         user_id = f"user_{uuid.uuid4().hex[:12]}"
-        user_doc = {
+        await db.users.insert_one({
             "user_id": user_id,
             "email": email,
             "name": data.get("name") or email.split("@")[0],
             "picture": data.get("picture"),
-            "role": "patient",  # default; can be updated on first setup
+            "role": "patient",
             "created_at": datetime.now(timezone.utc),
-        }
-        await db.users.insert_one({**user_doc})
+        })
 
+    one_time_code = uuid.uuid4().hex + uuid.uuid4().hex
+    await db.oauth_codes.insert_one({
+        "code": one_time_code,
+        "user_id": user_id,
+        "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5),
+        "created_at": datetime.now(timezone.utc),
+    })
+    separator = "&" if "?" in state_row["return_url"] else "?"
+    return RedirectResponse(f'{state_row["return_url"]}{separator}' + urlencode({"auth_code": one_time_code}))
+
+
+@api_router.post("/auth/google/exchange")
+async def google_exchange(payload: GoogleCodeExchange):
+    """Exchange the one-time app code for the app's normal seven-day session token."""
+    row = await db.oauth_codes.find_one_and_delete({"code": payload.code})
+    if not row:
+        raise HTTPException(status_code=401, detail="Invalid or already-used Google login code")
+    expires_at = row.get("expires_at")
+    if expires_at and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at and expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=401, detail="Google login code expired")
+
+    user_doc = await db.users.find_one({"user_id": row["user_id"]}, {"_id": 0})
+    if not user_doc:
+        raise HTTPException(status_code=401, detail="User not found")
     user_doc = await ensure_user_defaults(user_doc)
-    session_row = _mint_session_token(user_id)
+    session_row = _mint_session_token(user_doc["user_id"])
     await db.user_sessions.insert_one({**session_row})
-
     return {"session_token": session_row["session_token"], "user": user_doc}
-
 
 @api_router.post("/auth/otp/request")
 async def request_otp(payload: PhoneOtpRequest):
