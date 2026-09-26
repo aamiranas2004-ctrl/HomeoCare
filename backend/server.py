@@ -53,6 +53,8 @@ R2_REGION = (os.environ.get("R2_REGION") or "auto").strip()
 # Clinic identity
 CLINIC_DOCTOR_PHONE = "+917294136264"          # only phone allowed to log in as doctor
 CLINIC_DOCTOR_PHONE_DISPLAY = "+91-7294136264"
+CLINIC_DOCTOR_EMAIL = "agrawalhomeohall@gmail.com"
+LEGACY_DOCTOR_EMAIL = "dr.sonima@agrawalhomeohall.com"
 TEMP_DOCTOR_EMAILS: set[str] = set()  # no temporary doctor accounts enabled
 
 # MSG91 SMS OTP config
@@ -144,6 +146,10 @@ def get_object_sync(path: str) -> tuple[bytes, str]:
     response = client.get_object(Bucket=R2_BUCKET_NAME, Key=path)
     body = response["Body"].read()
     return body, response.get("ContentType", "application/octet-stream")
+
+def delete_object_sync(path: str) -> None:
+    client = init_storage_sync()
+    client.delete_object(Bucket=R2_BUCKET_NAME, Key=path)
 
 # ---------------------------------------------------------------------------
 # Models
@@ -366,12 +372,83 @@ async def on_startup():
     await db.reminders.create_index("patient_id")
     await db.reminders.create_index([("patient_id", 1), ("remind_at", 1)])
 
-    # Seed the clinic's doctor
-    doctor = await db.users.find_one({"email": "dr.sonima@agrawalhomeohall.com"}, {"_id": 0})
-    if not doctor:
+    # Canonical doctor-account migration. Preserve the seeded doctor's user_id
+    # so existing doctor-side references remain stable.
+    canonical = await db.users.find_one({"email": CLINIC_DOCTOR_EMAIL}, {"_id": 0})
+    legacy = await db.users.find_one({"email": LEGACY_DOCTOR_EMAIL}, {"_id": 0})
+
+    if legacy:
+        doctor_user_id = legacy["user_id"]
+        if canonical and canonical["user_id"] != doctor_user_id:
+            test_user_id = canonical["user_id"]
+
+            # Explicitly delete R2 objects owned by the test-patient account
+            # before removing their MongoDB metadata.
+            test_files = await db.files.find(
+                {"patient_id": test_user_id}, {"_id": 0, "storage_path": 1}
+            ).to_list(500)
+            for test_file in test_files:
+                storage_path = test_file.get("storage_path")
+                if storage_path:
+                    try:
+                        await run_in_threadpool(delete_object_sync, storage_path)
+                    except Exception as e:
+                        logger.error(f"R2 cleanup failed for {storage_path}: {e}")
+                        raise RuntimeError("Doctor migration stopped because test R2 cleanup failed")
+
+            # Remove test-patient records. Appointment-linked chat is removed by
+            # appointment id so replies/messages cannot become orphaned.
+            test_appts = await db.appointments.find(
+                {"patient_id": test_user_id}, {"_id": 0, "id": 1}
+            ).to_list(500)
+            test_appt_ids = [a["id"] for a in test_appts]
+            if test_appt_ids:
+                await db.chat_messages.delete_many({"appointment_id": {"$in": test_appt_ids}})
+            await db.files.delete_many({"patient_id": test_user_id})
+            await db.family_members.delete_many({"account_id": test_user_id})
+            await db.reminders.delete_many({"patient_id": test_user_id})
+            await db.appointments.delete_many({"patient_id": test_user_id})
+            await db.user_sessions.delete_many({"user_id": test_user_id})
+            await db.oauth_codes.delete_many({"user_id": test_user_id})
+            await db.users.delete_one({"user_id": test_user_id})
+            logger.info("Removed previous test-patient account and its R2 objects")
+
+        await db.users.update_one(
+            {"user_id": doctor_user_id},
+            {
+                "$set": {
+                    "email": CLINIC_DOCTOR_EMAIL,
+                    "phone": CLINIC_DOCTOR_PHONE,
+                    "name": "Dr. Sonima Agrawal",
+                    "role": "doctor",
+                    "specialization": "Homeopathic Physician",
+                    "qualification": "BHMS",
+                },
+                "$unset": {"uhid": "", "address": ""},
+            },
+        )
+        logger.info("Migrated clinic doctor to permanent Google login")
+    elif canonical:
+        doctor_user_id = canonical["user_id"]
+        await db.users.update_one(
+            {"user_id": doctor_user_id},
+            {
+                "$set": {
+                    "phone": CLINIC_DOCTOR_PHONE,
+                    "name": "Dr. Sonima Agrawal",
+                    "role": "doctor",
+                    "specialization": "Homeopathic Physician",
+                    "qualification": "BHMS",
+                },
+                "$unset": {"uhid": "", "address": ""},
+            },
+        )
+        logger.info("Confirmed permanent clinic doctor account")
+    else:
+        doctor_user_id = f"user_{uuid.uuid4().hex[:12]}"
         await db.users.insert_one({
-            "user_id": f"user_{uuid.uuid4().hex[:12]}",
-            "email": "dr.sonima@agrawalhomeohall.com",
+            "user_id": doctor_user_id,
+            "email": CLINIC_DOCTOR_EMAIL,
             "phone": CLINIC_DOCTOR_PHONE,
             "name": "Dr. Sonima Agrawal",
             "picture": "https://agrawalhomeohall.com/wp-content/uploads/2026/06/ChatGPT-Image-Jun-23-2026-11_17_26-AM-682x1024.png",
@@ -380,13 +457,15 @@ async def on_startup():
             "qualification": "BHMS",
             "created_at": datetime.now(timezone.utc),
         })
-        logger.info("Seeded default doctor Dr. Sonima Agrawal")
+        logger.info("Seeded permanent clinic doctor Dr. Sonima Agrawal")
 
-    # Demote any stray "doctor" accounts that are NOT the seeded clinic doctor
-    # (e.g. leftover from tests). Only the clinic phone may keep role=doctor.
+    # Demote every other doctor account except explicitly permitted temporary testers.
     demote_res = await db.users.update_many(
-        {"role": "doctor", "phone": {"$ne": CLINIC_DOCTOR_PHONE},
-         "email": {"$nin": ["dr.sonima@agrawalhomeohall.com", *TEMP_DOCTOR_EMAILS]}},
+        {
+            "role": "doctor",
+            "user_id": {"$ne": doctor_user_id},
+            "email": {"$nin": [CLINIC_DOCTOR_EMAIL, *TEMP_DOCTOR_EMAILS]},
+        },
         {"$set": {"role": "patient"}},
     )
     if demote_res.modified_count:
@@ -576,6 +655,7 @@ async def google_callback(code: Optional[str] = None, state: Optional[str] = Non
         raise HTTPException(status_code=401, detail="A verified Google email is required")
 
     is_temp_doctor = email in TEMP_DOCTOR_EMAILS
+    is_clinic_doctor = email == CLINIC_DOCTOR_EMAIL
     existing = await db.users.find_one({"email": email}, {"_id": 0})
     if existing:
         user_id = existing["user_id"]
@@ -584,9 +664,9 @@ async def google_callback(code: Optional[str] = None, state: Optional[str] = Non
             updates["name"] = data["name"]
         if data.get("picture") and not existing.get("picture"):
             updates["picture"] = data["picture"]
-        if is_temp_doctor and existing.get("role") != "doctor":
+        if (is_temp_doctor or is_clinic_doctor) and existing.get("role") != "doctor":
             updates["role"] = "doctor"
-            updates["specialization"] = "Temporary doctor test account"
+            updates["specialization"] = "Homeopathic Physician" if is_clinic_doctor else "Temporary doctor test account"
         if updates:
             await db.users.update_one({"user_id": user_id}, {"$set": updates})
     else:
@@ -596,8 +676,8 @@ async def google_callback(code: Optional[str] = None, state: Optional[str] = Non
             "email": email,
             "name": data.get("name") or email.split("@")[0],
             "picture": data.get("picture"),
-            "role": "doctor" if is_temp_doctor else "patient",
-            "specialization": "Temporary doctor test account" if is_temp_doctor else None,
+            "role": "doctor" if (is_temp_doctor or is_clinic_doctor) else "patient",
+            "specialization": "Homeopathic Physician" if is_clinic_doctor else ("Temporary doctor test account" if is_temp_doctor else None),
             "created_at": datetime.now(timezone.utc),
         })
 
@@ -826,7 +906,7 @@ async def update_role(payload: RoleUpdate, user: dict = Depends(get_current_user
     Only the clinic's registered doctor phone may be assigned the doctor role."""
     desired = payload.role
     if desired == "doctor" and user.get("phone") != CLINIC_DOCTOR_PHONE and \
-            user.get("email") != "dr.sonima@agrawalhomeohall.com":
+            user.get("email") != CLINIC_DOCTOR_EMAIL:
         desired = "patient"
     update = {"role": desired}
     if payload.age is not None:
