@@ -187,6 +187,7 @@ class PhoneOtpVerify(BaseModel):
 
 class RoleUpdate(BaseModel):
     role: Literal["patient", "doctor"]
+    name: Optional[str] = None
     age: Optional[int] = None
     gender: Optional[str] = None
     address: Optional[str] = None
@@ -909,6 +910,11 @@ async def update_role(payload: RoleUpdate, user: dict = Depends(get_current_user
             user.get("email") != CLINIC_DOCTOR_EMAIL:
         desired = "patient"
     update = {"role": desired}
+    if desired == "patient":
+        patient_name = (payload.name or "").strip()
+        if not patient_name:
+            raise HTTPException(status_code=400, detail="Patient name is required")
+        update["name"] = patient_name
     if payload.age is not None:
         update["age"] = payload.age
     if payload.gender:
