@@ -41,6 +41,7 @@ export default function LoginScreen() {
   const [devOtp, setDevOtp] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingGoogleAuth, setPendingGoogleAuth] = useState<{ token: string; user: any } | null>(null);
   const processedSession = useRef<Set<string>>(new Set());
   const cachedUrl = useRef<string | null>(null);
 
@@ -75,7 +76,17 @@ export default function LoginScreen() {
       });
       if (!res.ok) throw new Error("Google auth failed");
       const data = await res.json();
-      await loginWithToken(data.session_token, data.user);
+      if (data.user?.role === "patient") {
+        const patientName = name.trim();
+        if (!patientName) {
+          setPendingGoogleAuth({ token: data.session_token, user: data.user });
+          return;
+        }
+        const updated = await updatePatientName(data.session_token, patientName);
+        await loginWithToken(data.session_token, updated);
+      } else {
+        await loginWithToken(data.session_token, data.user);
+      }
       if (Platform.OS === "web") {
         try {
           const u = new URL(window.location.href);
@@ -86,6 +97,42 @@ export default function LoginScreen() {
       }
     } catch (e: any) {
       setError(e?.message || "Google login failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updatePatientName = async (token: string, patientName: string) => {
+    const res = await fetch(`${API}/auth/role`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ role: "patient", name: patientName }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || "Could not save patient name");
+    }
+    return res.json();
+  };
+
+  const finishGooglePatientLogin = async () => {
+    if (!pendingGoogleAuth) return;
+    const patientName = name.trim();
+    if (!patientName) {
+      setError("Please enter the patient's full name");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const updated = await updatePatientName(pendingGoogleAuth.token, patientName);
+      await loginWithToken(pendingGoogleAuth.token, updated);
+      setPendingGoogleAuth(null);
+    } catch (e: any) {
+      setError(e?.message || "Could not save patient name");
     } finally {
       setLoading(false);
     }
@@ -303,10 +350,35 @@ export default function LoginScreen() {
                   <View style={styles.divider} />
                 </View>
 
-                <Pressable testID="google-btn" onPress={handleGoogle} style={styles.googleBtn}>
-                  <Icon name="logo-google" size={18} color="#0F172A" />
-                  <Text style={styles.googleTxt}>Continue with Google</Text>
-                </Pressable>
+                {pendingGoogleAuth && role === "patient" ? (
+                  <View>
+                    <Text style={styles.label}>Patient Full Name *</Text>
+                    <View style={styles.inputWrap}>
+                      <TextInput
+                        testID="google-patient-name-input"
+                        value={name}
+                        onChangeText={setName}
+                        placeholder="Enter patient's full name"
+                        style={styles.input}
+                        autoCapitalize="words"
+                        placeholderTextColor="#94A3B8"
+                      />
+                    </View>
+                    <Pressable
+                      testID="google-patient-continue-btn"
+                      onPress={finishGooglePatientLogin}
+                      disabled={loading}
+                      style={[styles.primaryBtn, loading && { opacity: 0.6 }]}
+                    >
+                      {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.primaryTxt}>Continue</Text>}
+                    </Pressable>
+                  </View>
+                ) : (
+                  <Pressable testID="google-btn" onPress={handleGoogle} style={styles.googleBtn}>
+                    <Icon name="logo-google" size={18} color="#0F172A" />
+                    <Text style={styles.googleTxt}>Continue with Google</Text>
+                  </Pressable>
+                )}
               </View>
             ) : (
               <View>
