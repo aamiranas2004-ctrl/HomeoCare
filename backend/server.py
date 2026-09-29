@@ -37,6 +37,7 @@ load_dotenv(ROOT_DIR / ".env")
 mongo_url = os.environ["MONGO_URL"]
 DB_NAME = os.environ["DB_NAME"]
 APP_NAME = os.environ.get("APP_NAME", "agrawal-homeo-hall")
+WEBSITE_FORM_SECRET = (os.environ.get("WEBSITE_FORM_SECRET") or "").strip()
 
 # Direct Google OAuth (server-side authorization-code flow)
 GOOGLE_CLIENT_ID = (os.environ.get("GOOGLE_CLIENT_ID") or "").strip()
@@ -191,6 +192,32 @@ class RoleUpdate(BaseModel):
     age: Optional[int] = None
     gender: Optional[str] = None
     address: Optional[str] = None
+
+
+class WebsiteAppointmentRequestCreate(BaseModel):
+    full_name: str
+    phone: str
+    email: Optional[str] = None
+    health_concern: str
+    consultation_mode: str
+    additional_information: Optional[str] = None
+
+
+class WebsiteAppointmentRequest(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    full_name: str
+    phone: str
+    email: Optional[str] = None
+    health_concern: str
+    consultation_mode: str
+    additional_information: Optional[str] = None
+    source: Literal["website"] = "website"
+    status: Literal["pending", "contacted", "converted", "closed"] = "pending"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class WebsiteAppointmentStatusUpdate(BaseModel):
+    status: Literal["pending", "contacted", "converted", "closed"]
 
 
 class AppointmentCreate(BaseModel):
@@ -365,6 +392,8 @@ async def on_startup():
     await db.oauth_codes.create_index("expires_at", expireAfterSeconds=0)
     await db.appointments.create_index("patient_id")
     await db.appointments.create_index("doctor_id")
+    await db.appointment_requests.create_index("id", unique=True)
+    await db.appointment_requests.create_index([("status", 1), ("created_at", -1)])
     await db.files.create_index("patient_id")
     await db.family_members.create_index("account_id")
     await db.family_members.create_index("id", unique=True)
@@ -925,6 +954,79 @@ async def update_role(payload: RoleUpdate, user: dict = Depends(get_current_user
     user.update(update)
     user = await ensure_user_defaults(user)
     return user
+
+
+# ---------------------------------------------------------------------------
+# Public website appointment requests
+# ---------------------------------------------------------------------------
+@api_router.post("/public/appointment-request", response_model=WebsiteAppointmentRequest)
+async def create_website_appointment_request(
+    payload: WebsiteAppointmentRequestCreate,
+    x_website_form_secret: Optional[str] = Header(None),
+):
+    """Receive appointment requests from the clinic WordPress server.
+
+    This endpoint intentionally creates no patient account or UHID. Website
+    visitors remain unregistered leads until they independently create/login
+    to a HomeoCare patient account.
+    """
+    if not WEBSITE_FORM_SECRET:
+        raise HTTPException(status_code=503, detail="Website appointment integration is not configured")
+    if not x_website_form_secret or x_website_form_secret != WEBSITE_FORM_SECRET:
+        raise HTTPException(status_code=401, detail="Invalid website form credentials")
+
+    full_name = (payload.full_name or "").strip()
+    phone = (payload.phone or "").strip()
+    health_concern = (payload.health_concern or "").strip()
+    consultation_mode = (payload.consultation_mode or "").strip()
+    email = (payload.email or "").strip() or None
+    additional = (payload.additional_information or "").strip() or None
+
+    if not full_name or len(full_name) > 120:
+        raise HTTPException(status_code=400, detail="Valid patient name is required")
+    if not phone or len(phone) > 30:
+        raise HTTPException(status_code=400, detail="Valid phone number is required")
+    if not health_concern or len(health_concern) > 4000:
+        raise HTTPException(status_code=400, detail="Health concern is required")
+    if not consultation_mode or len(consultation_mode) > 80:
+        raise HTTPException(status_code=400, detail="Consultation mode is required")
+    if email and ("@" not in email or len(email) > 254):
+        raise HTTPException(status_code=400, detail="Invalid email address")
+    if additional and len(additional) > 4000:
+        raise HTTPException(status_code=400, detail="Additional information is too long")
+
+    request_row = WebsiteAppointmentRequest(
+        full_name=full_name,
+        phone=phone,
+        email=email,
+        health_concern=health_concern,
+        consultation_mode=consultation_mode,
+        additional_information=additional,
+    )
+    await db.appointment_requests.insert_one(request_row.dict())
+    return request_row
+
+
+@api_router.get("/appointment-requests", response_model=List[WebsiteAppointmentRequest])
+async def list_website_appointment_requests(user: dict = Depends(get_current_user)):
+    await require_role("doctor", user)
+    rows = await db.appointment_requests.find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return [WebsiteAppointmentRequest(**r) for r in rows]
+
+
+@api_router.patch("/appointment-requests/{request_id}", response_model=WebsiteAppointmentRequest)
+async def update_website_appointment_request(
+    request_id: str,
+    payload: WebsiteAppointmentStatusUpdate,
+    user: dict = Depends(get_current_user),
+):
+    await require_role("doctor", user)
+    row = await db.appointment_requests.find_one({"id": request_id}, {"_id": 0})
+    if not row:
+        raise HTTPException(status_code=404, detail="Website appointment request not found")
+    await db.appointment_requests.update_one({"id": request_id}, {"$set": {"status": payload.status}})
+    row["status"] = payload.status
+    return WebsiteAppointmentRequest(**row)
 
 
 # ---------------------------------------------------------------------------
