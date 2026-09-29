@@ -19,6 +19,7 @@ export default function DoctorQueue() {
   const router = useRouter();
   const { user } = useAuth();
   const [items, setItems] = useState<any[]>([]);
+  const [websiteRequests, setWebsiteRequests] = useState<any[]>([]);
   const [unread, setUnread] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -27,12 +28,14 @@ export default function DoctorQueue() {
 
   const load = async () => {
     try {
-      const [data, u] = await Promise.all([
+      const [data, u, web] = await Promise.all([
         apiJson<any[]>("/appointments/mine"),
         apiJson<Record<string, number>>("/chat/unread").catch(() => ({})),
+        apiJson<any[]>("/appointment-requests").catch(() => []),
       ]);
       setItems(data);
       setUnread(u || {});
+      setWebsiteRequests(web || []);
     } catch {} finally { setLoading(false); }
   };
 
@@ -50,7 +53,7 @@ export default function DoctorQueue() {
     } catch {}
   };
 
-  const waiting = items.filter((a) => a.status === "pending" || a.status === "confirmed").length;
+  const waiting = items.filter((a) => a.status === "pending" || a.status === "confirmed").length + websiteRequests.filter((r) => r.status === "pending").length;
   const completed = items.filter((a) => a.status === "completed").length;
 
   return (
@@ -106,7 +109,47 @@ export default function DoctorQueue() {
           contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + spacing.xxxl, gap: spacing.md }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} />}
         >
-          <Text style={styles.section}>Today&apos;s Queue</Text>
+          <Text style={styles.section}>Website Appointment Requests</Text>
+          {websiteRequests.length === 0 ? (
+            <View style={styles.emptyWeb}>
+              <Text style={styles.emptyWebTxt}>No website appointment requests</Text>
+            </View>
+          ) : (
+            websiteRequests.map((r) => (
+              <View key={r.id} style={styles.webCard} testID={`website-request-${r.id}`}>
+                <View style={styles.cardHead}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.pName}>{r.full_name}</Text>
+                    <Text style={styles.webMeta}>Website request · {new Date(r.created_at).toLocaleString()}</Text>
+                  </View>
+                  <View style={styles.webChip}><Text style={styles.webChipTxt}>{r.status}</Text></View>
+                </View>
+                <Text style={styles.sym}><Text style={styles.symLbl}>Phone: </Text>{r.phone}</Text>
+                {r.email ? <Text style={styles.sym}><Text style={styles.symLbl}>Email: </Text>{r.email}</Text> : null}
+                <Text style={styles.sym}><Text style={styles.symLbl}>Mode: </Text>{r.consultation_mode}</Text>
+                <Text style={styles.sym}><Text style={styles.symLbl}>Health concern: </Text>{r.health_concern}</Text>
+                {r.additional_information ? (
+                  <Text style={styles.sym}><Text style={styles.symLbl}>Additional information: </Text>{r.additional_information}</Text>
+                ) : null}
+                {r.status === "pending" ? (
+                  <Pressable
+                    onPress={async () => {
+                      await apiJson(`/appointment-requests/${r.id}`, {
+                        method: "PATCH",
+                        body: JSON.stringify({ status: "contacted" }),
+                      });
+                      load();
+                    }}
+                    style={styles.webAction}
+                  >
+                    <Text style={styles.webActionTxt}>Mark as Contacted</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            ))
+          )}
+
+          <Text style={[styles.section, { marginTop: spacing.md }]}>Patient Appointments</Text>
           {items.length === 0 ? (
             <View style={styles.empty}>
               <Icon name="calendar-outline" size={48} color="#CBD5E1" />
@@ -255,6 +298,14 @@ const useStyles = makeStyles((c) => ({
   loading: { flex: 1, alignItems: "center", justifyContent: "center" },
   empty: { alignItems: "center", padding: spacing.xxxl, gap: spacing.sm },
   emptyTxt: { color: c.muted },
+  emptyWeb: { backgroundColor: c.surfaceSecondary, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: c.border },
+  emptyWebTxt: { color: c.muted, fontSize: 12 },
+  webCard: { backgroundColor: c.surfaceSecondary, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: "#A7F3D0", gap: spacing.sm },
+  webMeta: { color: c.muted, fontSize: 10, marginTop: 2 },
+  webChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.pill, backgroundColor: "#ECFDF5" },
+  webChipTxt: { color: "#047857", fontSize: 10, fontWeight: "700", textTransform: "capitalize" },
+  webAction: { alignSelf: "flex-start", backgroundColor: c.brandPrimary, paddingHorizontal: 14, paddingVertical: 9, borderRadius: radius.pill },
+  webActionTxt: { color: c.onBrandPrimary, fontWeight: "700", fontSize: 11 },
 
   card: { backgroundColor: c.surfaceSecondary, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: c.border, gap: spacing.sm },
   cardHead: { flexDirection: "row", alignItems: "center" },
