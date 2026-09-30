@@ -1409,7 +1409,10 @@ app.include_router(api_router)
 CORS_ORIGINS = [
     o.strip() for o in (os.environ.get("CORS_ORIGINS") or "").split(",") if o.strip()
 ] or [
-    "https://homeo-appointments-6.preview.emergentagent.com",
+    "https://app.agrawalhomeohall.com",
+    "https://homeocare-54f.pages.dev",
+    "https://agrawalhomeohall.com",
+    "https://www.agrawalhomeohall.com",
     "http://localhost:8081",
     "http://localhost:19006",
 ]
