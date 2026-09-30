@@ -617,7 +617,7 @@ async def google_login(return_url: str):
     parsed = urlparse(return_url)
     allowed = (
         parsed.scheme == "agrawalhomeohall"
-        or (parsed.scheme in ("http", "https") and parsed.hostname in ("agrawalhomeohall.com", "www.agrawalhomeohall.com", "localhost", "127.0.0.1"))
+        or (parsed.scheme in ("http", "https") and parsed.hostname in ("agrawalhomeohall.com", "www.agrawalhomeohall.com", "app.agrawalhomeohall.com", "localhost", "127.0.0.1"))
     )
     if not allowed:
         raise HTTPException(status_code=400, detail="Invalid return URL")
