@@ -1,6 +1,6 @@
 import React from "react";
 import { Tabs } from "expo-router";
-import Icon from "@react-native-vector-icons/ionicons";
+import { Ionicons as Icon } from "@expo/vector-icons";
 import { colors } from "@/src/theme";
 
 export default function DoctorTabsLayout() {
