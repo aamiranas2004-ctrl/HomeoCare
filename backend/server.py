@@ -226,6 +226,10 @@ class WebsiteAppointmentRequestCreated(WebsiteAppointmentRequest):
     claim_token: str
 
 
+class WebsiteAppointmentClaim(BaseModel):
+    claim_token: str
+
+
 class WebsiteAppointmentStatusUpdate(BaseModel):
     status: Literal["pending", "contacted", "converted", "closed"]
 
@@ -1025,6 +1029,36 @@ async def create_website_appointment_request(
     response = request_row.dict()
     response["claim_token"] = claim_token
     return WebsiteAppointmentRequestCreated(**response)
+
+
+@api_router.post("/appointment-requests/claim", response_model=WebsiteAppointmentRequest)
+async def claim_website_appointment_request(
+    payload: WebsiteAppointmentClaim,
+    user: dict = Depends(get_current_user),
+):
+    """Attach one website request to the authenticated patient account."""
+    await require_role("patient", user)
+    claim_token = (payload.claim_token or "").strip()
+    if not claim_token or len(claim_token) > 200:
+        raise HTTPException(status_code=400, detail="Invalid claim token")
+
+    claim_token_hash = hashlib.sha256(claim_token.encode("utf-8")).hexdigest()
+    row = await db.appointment_requests.find_one({"claim_token_hash": claim_token_hash}, {"_id": 0})
+    if not row:
+        raise HTTPException(status_code=404, detail="Appointment request link is invalid")
+
+    existing_user_id = row.get("claimed_by_user_id")
+    if existing_user_id and existing_user_id != user["user_id"]:
+        raise HTTPException(status_code=409, detail="Appointment request has already been claimed")
+
+    now = datetime.now(timezone.utc)
+    await db.appointment_requests.update_one(
+        {"id": row["id"], "$or": [{"claimed_by_user_id": None}, {"claimed_by_user_id": {"$exists": False}}, {"claimed_by_user_id": user["user_id"]}]},
+        {"$set": {"claimed_by_user_id": user["user_id"], "claimed_at": row.get("claimed_at") or now}},
+    )
+    row["claimed_by_user_id"] = user["user_id"]
+    row["claimed_at"] = row.get("claimed_at") or now
+    return WebsiteAppointmentRequest(**row)
 
 
 @api_router.get("/appointment-requests", response_model=List[WebsiteAppointmentRequest])
