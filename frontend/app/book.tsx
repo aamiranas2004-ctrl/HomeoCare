@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   View, Text, ScrollView, Pressable, TextInput, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from "react-native";
-import { Ionicons as Icon } from "@expo/vector-icons";
+import Icon from "@/src/components/icon";
 import { Stack, useRouter } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
