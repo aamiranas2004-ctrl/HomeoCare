@@ -38,8 +38,7 @@
       "expo-image",
       "expo-secure-store",
       "expo-web-browser",
-      "expo-status-bar",
-      "@react-native-vector-icons/ionicons"
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true
