@@ -10,6 +10,7 @@ import {
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import Icon from "@/src/components/icon";
+import { MedicalCross, Venus, Check } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -218,7 +219,13 @@ export default function PatientHome() {
           {site.services.slice(0, 8).map((s: any, idx: number) => (
             <View key={idx} style={styles.serviceCard}>
               <View style={styles.serviceIcon}>
-                <Icon name={s.title === "Thyroid" ? "medical" : s.title.startsWith("PCOS") ? "female" : s.icon as any} size={22} color="#047857" />
+                {s.title === "Thyroid" ? (
+                  <MedicalCross size={22} color="#047857" strokeWidth={2.6} />
+                ) : s.title.startsWith("PCOS") ? (
+                  <Venus size={22} color="#047857" strokeWidth={2.6} />
+                ) : (
+                  <Icon name={s.icon as any} size={22} color="#047857" />
+                )}
               </View>
               <Text style={styles.serviceTitle} numberOfLines={1}>
                 {s.title}
@@ -236,7 +243,7 @@ export default function PatientHome() {
           {site.why_us.map((w: any, idx: number) => (
             <View key={idx} style={styles.whyRow}>
               <View style={styles.whyDot}>
-                <Icon name="checkmark" size={17} color="#047857" />
+                <Check size={18} color="#047857" strokeWidth={3.5} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.whyTitle}>{w.title}</Text>
