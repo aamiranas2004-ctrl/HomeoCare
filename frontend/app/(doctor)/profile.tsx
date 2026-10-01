@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, Pressable, ScrollView, Switch } from "react-native";
 import { Image } from "expo-image";
-import Icon from "@react-native-vector-icons/ionicons";
+import Icon from "@/src/components/icon";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
