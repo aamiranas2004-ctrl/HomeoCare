@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, ScrollView, Pressable, ActivityIndicator, RefreshControl, TextInput } from "react-native";
-import Icon from "@react-native-vector-icons/ionicons";
+import Icon from "@/src/components/icon";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { makeStyles, spacing, radius } from "@/src/theme";
