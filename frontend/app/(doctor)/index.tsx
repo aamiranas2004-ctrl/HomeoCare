@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { View, Text, ScrollView, Pressable, ActivityIndicator, RefreshControl, TextInput } from "react-native";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
-import Icon from "@react-native-vector-icons/ionicons";
+import { Ionicons as Icon } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
