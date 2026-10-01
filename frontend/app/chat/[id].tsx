@@ -3,7 +3,7 @@ import {
   View, Text, TextInput, Pressable, KeyboardAvoidingView, Platform,
   FlatList, ActivityIndicator,
 } from "react-native";
-import Icon from "@react-native-vector-icons/ionicons";
+import Icon from "@/src/components/icon";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
