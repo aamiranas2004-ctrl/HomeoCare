@@ -3,7 +3,7 @@ import {
   ArrowLeft, Calendar, Check, CheckCircle, ChevronForward, CircleHelp,
   ClipboardPen, CloudUpload, FileText, Fingerprint, FolderOpen, Globe,
   Home, Info, Lock, LogOut, MapPin, MedicalCross, MessageCircle,
-  MessagesSquare, Pencil, People, Phone, Plus, Star, Trash2, User,
+  MessagesSquare, Pencil, Users, Phone, Plus, Star, Trash2, User,
   X, Bell, Eye, Search, Image, FileText as DocumentText, Send, AlertCircle, LayoutGrid,
   Activity, Venus, Accessibility, Sparkles, Cloud, Scissors, ShieldCheck, Utensils, Droplets, Zap,
 } from "lucide-react-native";
@@ -17,7 +17,7 @@ const icons: Record<string, any> = {
   "folder-open-outline": FolderOpen, "globe": Globe, "home": Home, "home-outline": Home,
   "information-circle": Info, "lock-closed": Lock, "log-out": LogOut,
   "location": MapPin, "medical": MedicalCross, "chatbubble-ellipses": MessageCircle,
-  "chatbubbles": MessagesSquare, "people": People, "people-outline": People,
+  "chatbubbles": MessagesSquare, "people": Users, "people-outline": Users,
   "call": Phone, "add": Plus, "star": Star, "trash-outline": Trash2,
   "person": User, "person-outline": User, "close": X,
   "notifications": Bell, "notifications-outline": Bell, "eye-outline": Eye,
