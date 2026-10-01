@@ -1,6 +1,6 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Slot, useRouter, useSegments } from "expo-router";
-import { LogBox, View, ActivityIndicator, StyleSheet } from "react-native";
+import { LogBox, View, ActivityIndicator, StyleSheet, Platform } from "react-native";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -11,7 +11,7 @@ import { useEffect } from "react";
 
 import { ErrorBoundary } from "@/src/components/error-boundary";
 import { queryClient } from "@/src/query-client";
-import { AuthProvider, useAuth } from "@/src/api";
+import { AuthProvider, useAuth, apiJson } from "@/src/api";
 import { colors, setColorSchemeOverride } from "@/src/theme";
 
 LogBox.ignoreAllLogs(true);
@@ -34,6 +34,19 @@ function AuthGate() {
     // Any other route (including /book, /role-select, tab groups) is allowed
     // so long as it matches the user's role.
     if (inAuth) {
+      if (user.role === "patient" && Platform.OS === "web") {
+        const claimToken = new URLSearchParams(window.location.search).get("claim");
+        if (claimToken) {
+          apiJson("/appointment-requests/claim", {
+            method: "POST",
+            body: JSON.stringify({ claim_token: claimToken }),
+          }).finally(() => {
+            window.history.replaceState({}, "", window.location.pathname);
+            router.replace("/(patient)/appointments");
+          });
+          return;
+        }
+      }
       router.replace(user.role === "doctor" ? "/(doctor)" : "/(patient)");
       return;
     }
