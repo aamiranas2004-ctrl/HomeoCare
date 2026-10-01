@@ -1061,6 +1061,17 @@ async def claim_website_appointment_request(
     return WebsiteAppointmentRequest(**row)
 
 
+@api_router.get("/appointment-requests/mine", response_model=List[WebsiteAppointmentRequest])
+async def list_my_website_appointment_requests(user: dict = Depends(get_current_user)):
+    """Return only website appointment requests claimed by this patient."""
+    await require_role("patient", user)
+    rows = await db.appointment_requests.find(
+        {"claimed_by_user_id": user["user_id"]},
+        {"_id": 0},
+    ).sort("created_at", -1).to_list(100)
+    return [WebsiteAppointmentRequest(**row) for row in rows]
+
+
 @api_router.get("/appointment-requests", response_model=List[WebsiteAppointmentRequest])
 async def list_website_appointment_requests(user: dict = Depends(get_current_user)):
     await require_role("doctor", user)
