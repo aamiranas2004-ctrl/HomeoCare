@@ -18,6 +18,8 @@ import os
 import uuid
 import random
 import logging
+import secrets
+import hashlib
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional, Literal
@@ -213,6 +215,10 @@ class WebsiteAppointmentRequest(BaseModel):
     additional_information: Optional[str] = None
     source: Literal["website"] = "website"
     status: Literal["pending", "contacted", "converted", "closed"] = "pending"
+    claim_token: Optional[str] = Field(default=None, exclude=True)
+    claim_token_hash: Optional[str] = Field(default=None, exclude=True)
+    claimed_by_user_id: Optional[str] = None
+    claimed_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -394,6 +400,8 @@ async def on_startup():
     await db.appointments.create_index("doctor_id")
     await db.appointment_requests.create_index("id", unique=True)
     await db.appointment_requests.create_index([("status", 1), ("created_at", -1)])
+    await db.appointment_requests.create_index("claim_token_hash", sparse=True)
+    await db.appointment_requests.create_index("claimed_by_user_id", sparse=True)
     await db.files.create_index("patient_id")
     await db.family_members.create_index("account_id")
     await db.family_members.create_index("id", unique=True)
@@ -995,6 +1003,9 @@ async def create_website_appointment_request(
     if additional and len(additional) > 4000:
         raise HTTPException(status_code=400, detail="Additional information is too long")
 
+    claim_token = secrets.token_urlsafe(32)
+    claim_token_hash = hashlib.sha256(claim_token.encode("utf-8")).hexdigest()
+
     request_row = WebsiteAppointmentRequest(
         full_name=full_name,
         phone=phone,
@@ -1002,9 +1013,14 @@ async def create_website_appointment_request(
         health_concern=health_concern,
         consultation_mode=consultation_mode,
         additional_information=additional,
+        claim_token_hash=claim_token_hash,
     )
     await db.appointment_requests.insert_one(request_row.dict())
-    return request_row
+    # Return the opaque token only to the trusted WordPress server on creation.
+    # Only its SHA-256 hash is stored in MongoDB.
+    response = request_row.dict()
+    response["claim_token"] = claim_token
+    return WebsiteAppointmentRequest(**response)
 
 
 @api_router.get("/appointment-requests", response_model=List[WebsiteAppointmentRequest])
