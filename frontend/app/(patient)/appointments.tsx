@@ -13,6 +13,7 @@ export default function AppointmentsScreen() {
   const styles = useStyles();
   const router = useRouter();
   const [items, setItems] = useState<any[]>([]);
+  const [requests, setRequests] = useState<any[]>([]);
   const [unread, setUnread] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("upcoming");
@@ -20,12 +21,14 @@ export default function AppointmentsScreen() {
 
   const load = async () => {
     try {
-      const [data, u] = await Promise.all([
+      const [data, u, requestData] = await Promise.all([
         apiJson<any[]>("/appointments/mine"),
         apiJson<Record<string, number>>("/chat/unread").catch(() => ({})),
+        apiJson<any[]>("/appointment-requests/mine").catch(() => []),
       ]);
       setItems(data);
       setUnread(u || {});
+      setRequests(requestData || []);
     } catch {} finally {
       setLoading(false);
     }
@@ -86,7 +89,24 @@ export default function AppointmentsScreen() {
           contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         >
-          {filtered.length === 0 ? (
+          {tab === "upcoming" && requests.length > 0 ? (
+            <View style={styles.requestSection}>
+              <Text style={styles.requestHeading}>Appointment Requests</Text>
+              {requests.map((r) => {
+                const label = r.status === "contacted" ? "Contacted" : r.status === "converted" ? "Appointment Confirmed" : r.status === "closed" ? "Closed" : "Request Received";
+                return (
+                  <View key={r.id} style={styles.requestCard}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.requestTitle}>{r.health_concern}</Text>
+                      <Text style={styles.requestMeta}>{r.consultation_mode} • {label}</Text>
+                    </View>
+                    <View style={styles.requestChip}><Text style={styles.requestChipTxt}>{label}</Text></View>
+                  </View>
+                );
+              })}
+            </View>
+          ) : null}
+                    {filtered.length === 0 ? (
             <View style={styles.empty}>
               <Icon name="calendar-outline" size={48} color="#CBD5E1" />
               <Text style={styles.emptyTxt}>No {tab} appointments</Text>
@@ -172,6 +192,13 @@ const useStyles = makeStyles((c) => ({
   emptyTxt: { color: c.muted, fontSize: 14 },
   emptyBtn: { backgroundColor: c.brandPrimary, paddingHorizontal: spacing.xl, paddingVertical: 12, borderRadius: radius.pill },
   emptyBtnTxt: { color: c.onBrandPrimary, fontWeight: "700" },
+  requestSection: { gap: spacing.sm, marginBottom: spacing.sm },
+  requestHeading: { color: c.onSurface, fontSize: 15, fontWeight: "700" },
+  requestCard: { flexDirection: "row", alignItems: "center", gap: spacing.sm, backgroundColor: c.surfaceSecondary, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: c.border },
+  requestTitle: { color: c.onSurface, fontWeight: "700", fontSize: 13 },
+  requestMeta: { color: c.muted, fontSize: 11, marginTop: 3, textTransform: "capitalize" },
+  requestChip: { backgroundColor: c.brandTertiary, borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 5 },
+  requestChipTxt: { color: c.onBrandTertiary, fontSize: 10, fontWeight: "700" },
   card: { backgroundColor: c.surfaceSecondary, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: c.border, gap: spacing.sm },
   cardHead: { flexDirection: "row", alignItems: "center" },
   doctor: { color: c.onSurface, fontWeight: "700", fontSize: 15 },
