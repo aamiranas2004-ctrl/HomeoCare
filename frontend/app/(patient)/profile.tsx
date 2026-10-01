@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { View, Text, Pressable, ScrollView, Linking, TextInput } from "react-native";
 import { Image } from "expo-image";
-import Icon from "@react-native-vector-icons/ionicons";
+import { Ionicons as Icon } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 
