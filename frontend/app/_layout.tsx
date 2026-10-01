@@ -7,8 +7,6 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StatusBar } from "expo-status-bar";
 import * as WebBrowser from "expo-web-browser";
 import * as SecureStore from "expo-secure-store";
-import { useFonts } from "expo-font";
-import { Ionicons } from "@expo/vector-icons";
 import { useEffect } from "react";
 
 import { ErrorBoundary } from "@/src/components/error-boundary";
@@ -57,8 +55,6 @@ function AuthGate() {
 }
 
 export default function RootLayout() {
-  const [iconsLoaded, iconsError] = useFonts(Ionicons.font);
-
   useEffect(() => {
     (async () => {
       try {
@@ -67,14 +63,6 @@ export default function RootLayout() {
       } catch {}
     })();
   }, []);
-  if (!iconsLoaded && !iconsError) {
-    return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color={colors.brandPrimary} />
-      </View>
-    );
-  }
-
   return (
     <ErrorBoundary>
       <GestureHandlerRootView style={{ flex: 1 }}>
