@@ -222,6 +222,10 @@ class WebsiteAppointmentRequest(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class WebsiteAppointmentRequestCreated(WebsiteAppointmentRequest):
+    claim_token: str
+
+
 class WebsiteAppointmentStatusUpdate(BaseModel):
     status: Literal["pending", "contacted", "converted", "closed"]
 
@@ -967,7 +971,7 @@ async def update_role(payload: RoleUpdate, user: dict = Depends(get_current_user
 # ---------------------------------------------------------------------------
 # Public website appointment requests
 # ---------------------------------------------------------------------------
-@api_router.post("/public/appointment-request", response_model=WebsiteAppointmentRequest)
+@api_router.post("/public/appointment-request", response_model=WebsiteAppointmentRequestCreated)
 async def create_website_appointment_request(
     payload: WebsiteAppointmentRequestCreate,
     x_website_form_secret: Optional[str] = Header(None),
@@ -1020,7 +1024,7 @@ async def create_website_appointment_request(
     # Only its SHA-256 hash is stored in MongoDB.
     response = request_row.dict()
     response["claim_token"] = claim_token
-    return WebsiteAppointmentRequest(**response)
+    return WebsiteAppointmentRequestCreated(**response)
 
 
 @api_router.get("/appointment-requests", response_model=List[WebsiteAppointmentRequest])
