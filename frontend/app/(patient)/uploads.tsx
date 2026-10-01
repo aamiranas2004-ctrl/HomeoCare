@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import {
   View, Text, ScrollView, Pressable, ActivityIndicator, RefreshControl, Platform, Alert,
 } from "react-native";
-import { Ionicons as Icon } from "@expo/vector-icons";
+import Icon from "@/src/components/icon";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import { SafeAreaView } from "react-native-safe-area-context";
