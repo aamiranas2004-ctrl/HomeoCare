@@ -10,7 +10,7 @@ import {
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import Icon from "@/src/components/icon";
-import { MedicalCross, Venus, Check } from "lucide-react-native";
+import { Cross, CircleDot, Check } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -220,9 +220,9 @@ export default function PatientHome() {
             <View key={idx} style={styles.serviceCard}>
               <View style={styles.serviceIcon}>
                 {s.title === "Thyroid" ? (
-                  <MedicalCross size={22} color="#047857" strokeWidth={2.6} />
+                  <Cross size={22} color="#047857" strokeWidth={2.6} />
                 ) : s.title.startsWith("PCOS") ? (
-                  <Venus size={22} color="#047857" strokeWidth={2.6} />
+                  <CircleDot size={22} color="#047857" strokeWidth={2.6} />
                 ) : (
                   <Icon name={s.icon as any} size={22} color="#047857" />
                 )}
