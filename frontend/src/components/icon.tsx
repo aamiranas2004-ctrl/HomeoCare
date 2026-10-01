@@ -4,7 +4,7 @@ import {
   ClipboardPen, CloudUpload, FileText, Fingerprint, FolderOpen, Globe,
   Home, Info, Lock, LogOut, MapPin, MedicalCross, MessageCircle,
   MessagesSquare, Pencil, People, Phone, Plus, Star, Trash2, User,
-  X, Bell, Eye, Search, Image, FileText as DocumentText,
+  X, Bell, Eye, Search, Image, FileText as DocumentText, Send,
 } from "lucide-react-native";
 
 const icons: Record<string, any> = {
@@ -20,7 +20,7 @@ const icons: Record<string, any> = {
   "person": User, "person-outline": User, "close": X,
   "notifications": Bell, "notifications-outline": Bell, "eye-outline": Eye,
   "logo-google": Globe, "logo-whatsapp": MessageCircle,
-  "search": Search, "image": Image, "document-text": DocumentText, "chatbubble": MessageCircle,
+  "search": Search, "image": Image, "document-text": DocumentText, "chatbubble": MessageCircle, "send": Send,
 };
 
 export default function Icon({ name, size = 24, color = "currentColor", ...props }: any) {
