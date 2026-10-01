@@ -24,12 +24,12 @@ const icons: Record<string, any> = {
   "logo-google": Globe, "logo-whatsapp": MessageCircle,
   "search": Search, "image": Image, "document-text": DocumentText, "chatbubble": MessageCircle, "send": Send,
   "chatbubbles-outline": MessagesSquare, "alert-circle": AlertCircle,
-  "pulse": Activity, "female": Venus, "walk": Accessibility, "sparkles": Sparkles,
+  "pulse": Activity, "medical": MedicalCross, "female": Venus, "walk": Accessibility, "sparkles": Sparkles,
   "cloud": Cloud, "cut": Scissors, "shield-checkmark": ShieldCheck, "restaurant": Utensils,
   "water": Droplets, "flash": Zap,
 };
 
 export default function Icon({ name, size = 24, color = "currentColor", ...props }: any) {
   const Component = icons[name] || CircleHelp;
-  return <Component size={size} color={color} strokeWidth={2} {...props} />;
+  return <Component size={size} color={color} strokeWidth={2.6} {...props} />;
 }
