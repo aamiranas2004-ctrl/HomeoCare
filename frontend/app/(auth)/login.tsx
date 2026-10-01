@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
-import Icon from "@react-native-vector-icons/ionicons";
+import { Ionicons as Icon } from "@expo/vector-icons";
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
