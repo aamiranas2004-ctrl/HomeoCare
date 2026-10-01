@@ -4,11 +4,12 @@ import {
   ClipboardPen, CloudUpload, FileText, Fingerprint, FolderOpen, Globe,
   Home, Info, Lock, LogOut, MapPin, MedicalCross, MessageCircle,
   MessagesSquare, Pencil, People, Phone, Plus, Star, Trash2, User,
-  X, Bell, Eye, Search, Image, FileText as DocumentText, Send, AlertCircle,
+  X, Bell, Eye, Search, Image, FileText as DocumentText, Send, AlertCircle, LayoutGrid,
 } from "lucide-react-native";
 
 const icons: Record<string, any> = {
   "arrow-back": ArrowLeft, "calendar": Calendar, "calendar-outline": Calendar,
+  "grid": LayoutGrid, "grid-outline": LayoutGrid,
   "checkmark": Check, "checkmark-circle": CheckCircle, "chevron-forward": ChevronForward,
   "create": ClipboardPen, "create-outline": Pencil, "cloud-upload": CloudUpload,
   "documents": FileText, "documents-outline": FileText, "finger-print": Fingerprint,
