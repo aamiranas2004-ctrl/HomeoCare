@@ -218,7 +218,7 @@ export default function PatientHome() {
           {site.services.slice(0, 8).map((s: any, idx: number) => (
             <View key={idx} style={styles.serviceCard}>
               <View style={styles.serviceIcon}>
-                <Icon name={s.icon as any} size={20} color="#059669" />
+                <Icon name={s.title === "Thyroid" ? "medical" : s.title.startsWith("PCOS") ? "female" : s.icon as any} size={22} color="#047857" />
               </View>
               <Text style={styles.serviceTitle} numberOfLines={1}>
                 {s.title}
@@ -236,7 +236,7 @@ export default function PatientHome() {
           {site.why_us.map((w: any, idx: number) => (
             <View key={idx} style={styles.whyRow}>
               <View style={styles.whyDot}>
-                <Icon name="checkmark" size={14} color="#065F46" />
+                <Icon name="checkmark" size={17} color="#047857" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.whyTitle}>{w.title}</Text>
@@ -415,7 +415,7 @@ const useStyles = makeStyles((c) => ({
 
   whyRow: { flexDirection: "row", gap: spacing.sm, alignItems: "flex-start" },
   whyDot: {
-    width: 22, height: 22, borderRadius: 11, backgroundColor: c.brandTertiary,
+    width: 24, height: 24, borderRadius: 12, backgroundColor: "#D1FAE5",
     alignItems: "center", justifyContent: "center", marginTop: 2,
   },
   whyTitle: { color: c.onSurface, fontWeight: "700", fontSize: 13 },
