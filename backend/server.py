@@ -995,7 +995,7 @@ async def create_website_appointment_request(
     phone = (payload.phone or "").strip()
     health_concern = (payload.health_concern or "").strip()
     consultation_mode = (payload.consultation_mode or "").strip()
-    email = (payload.email or "").strip() or None
+    email = (payload.email or "").strip().lower() or None
     additional = (payload.additional_information or "").strip() or None
 
     if not full_name or len(full_name) > 120:
@@ -1063,14 +1063,24 @@ async def claim_website_appointment_request(
 
 @api_router.get("/appointment-requests/mine", response_model=List[WebsiteAppointmentRequest])
 async def list_my_website_appointment_requests(user: dict = Depends(get_current_user)):
-    """Return only website appointment requests claimed by this patient."""
+    """Return requests linked to this patient, auto-linking by verified Google email."""
     await require_role("patient", user)
+    verified_email = (user.get("email") or "").strip().lower()
+    if verified_email:
+        await db.appointment_requests.update_many(
+            {
+                "$and": [
+                    {"$or": [{"claimed_by_user_id": None}, {"claimed_by_user_id": {"$exists": False}}]},
+                    {"email": {"$type": "string"}},
+                    {"$expr": {"$eq": [{"$toLower": "$email"}, verified_email]}},
+                ]
+            },
+            {"$set": {"claimed_by_user_id": user["user_id"], "claimed_at": datetime.now(timezone.utc)}},
+        )
     rows = await db.appointment_requests.find(
-        {"claimed_by_user_id": user["user_id"]},
-        {"_id": 0},
+        {"claimed_by_user_id": user["user_id"]}, {"_id": 0}
     ).sort("created_at", -1).to_list(100)
     return [WebsiteAppointmentRequest(**row) for row in rows]
-
 
 @api_router.get("/appointment-requests", response_model=List[WebsiteAppointmentRequest])
 async def list_website_appointment_requests(user: dict = Depends(get_current_user)):
