@@ -285,99 +285,94 @@ export default function LoginScreen() {
 
             {mode === "phone" ? (
               <View>
-                <Text style={styles.label}>Phone number</Text>
-                <View style={styles.inputWrap}>
-                  <Text style={styles.prefix}>+91</Text>
-                  <TextInput
-                    testID="phone-input"
-                    value={phone.replace(/^\+91/, "")}
-                    onChangeText={(t) => setPhone("+91" + t.replace(/\D/g, ""))}
-                    placeholder="10-digit mobile number"
-                    keyboardType="phone-pad"
-                    style={styles.input}
-                    maxLength={10}
-                    placeholderTextColor="#94A3B8"
-                  />
-                </View>
-
-                {role === "patient" && (
+                {role === "patient" ? (
                   <>
-                    <Text style={styles.label}>Full Name *</Text>
-                    <View style={styles.inputWrap}>
-                      <TextInput
-                        testID="name-input"
-                        value={name}
-                        onChangeText={setName}
-                        placeholder="Your full name"
-                        style={styles.input}
-                        placeholderTextColor="#94A3B8"
-                      />
-                    </View>
-
-                    <Text style={styles.label}>Address *</Text>
-                    <View style={[styles.inputWrap, { minHeight: 64, alignItems: "flex-start" }]}>
-                      <TextInput
-                        testID="address-input"
-                        value={address}
-                        onChangeText={setAddress}
-                        placeholder="House no., street, city"
-                        style={[styles.input, { textAlignVertical: "top", paddingTop: 10 }]}
-                        multiline
-                        placeholderTextColor="#94A3B8"
-                      />
-                    </View>
+                    {pendingGoogleAuth ? (
+                      <View>
+                        <Text style={styles.loginIntro}>Complete your patient profile</Text>
+                        <Text style={styles.loginIntroSub}>Enter the patient's name to finish signing in with Google.</Text>
+                        <Text style={styles.label}>Patient Full Name *</Text>
+                        <View style={styles.inputWrap}>
+                          <TextInput
+                            testID="google-patient-name-input"
+                            value={name}
+                            onChangeText={setName}
+                            placeholder="Enter patient's full name"
+                            style={styles.input}
+                            autoCapitalize="words"
+                            placeholderTextColor="#94A3B8"
+                          />
+                        </View>
+                        {error && <Text style={styles.error}>{error}</Text>}
+                        <Pressable
+                          testID="google-patient-continue-btn"
+                          onPress={finishGooglePatientLogin}
+                          disabled={loading}
+                          style={[styles.primaryBtn, loading && { opacity: 0.6 }]}
+                        >
+                          {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.primaryTxt}>Continue</Text>}
+                        </Pressable>
+                      </View>
+                    ) : (
+                      <>
+                        <Text style={styles.loginIntro}>Patient Login</Text>
+                        <Text style={styles.loginIntroSub}>Sign in securely with your Google account.</Text>
+                        {error && <Text style={styles.error}>{error}</Text>}
+                        <Pressable testID="google-btn" onPress={handleGoogle} disabled={loading} style={[styles.googlePrimaryBtn, loading && { opacity: 0.6 }]}>
+                          {loading ? (
+                            <ActivityIndicator color="#0F172A" />
+                          ) : (
+                            <>
+                              <Icon name="logo-google" size={20} color="#0F172A" />
+                              <Text style={styles.googlePrimaryTxt}>Continue with Google</Text>
+                            </>
+                          )}
+                        </Pressable>
+                        <View style={styles.comingSoonBox}>
+                          <Icon name="phone-portrait-outline" size={16} color="#64748B" />
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.comingSoonTitle}>Phone OTP login — Coming soon</Text>
+                            <Text style={styles.comingSoonText}>SMS login will be available after clinic verification is completed.</Text>
+                          </View>
+                        </View>
+                      </>
+                    )}
                   </>
-                )}
-
-                {error && <Text style={styles.error}>{error}</Text>}
-
-                <Pressable
-                  testID="request-otp-btn"
-                  onPress={handleRequestOtp}
-                  disabled={loading}
-                  style={[styles.primaryBtn, loading && { opacity: 0.6 }]}
-                >
-                  {loading ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                  ) : (
-                    <Text style={styles.primaryTxt}>Send OTP</Text>
-                  )}
-                </Pressable>
-
-                <View style={styles.dividerRow}>
-                  <View style={styles.divider} />
-                  <Text style={styles.dividerTxt}>or</Text>
-                  <View style={styles.divider} />
-                </View>
-
-                {pendingGoogleAuth && role === "patient" ? (
-                  <View>
-                    <Text style={styles.label}>Patient Full Name *</Text>
+                ) : (
+                  <>
+                    <Text style={styles.label}>Phone number</Text>
                     <View style={styles.inputWrap}>
+                      <Text style={styles.prefix}>+91</Text>
                       <TextInput
-                        testID="google-patient-name-input"
-                        value={name}
-                        onChangeText={setName}
-                        placeholder="Enter patient's full name"
+                        testID="phone-input"
+                        value={phone.replace(/^\\+91/, "")}
+                        onChangeText={(t) => setPhone("+91" + t.replace(/\\D/g, ""))}
+                        placeholder="10-digit mobile number"
+                        keyboardType="phone-pad"
                         style={styles.input}
-                        autoCapitalize="words"
+                        maxLength={10}
                         placeholderTextColor="#94A3B8"
                       />
                     </View>
+                    {error && <Text style={styles.error}>{error}</Text>}
                     <Pressable
-                      testID="google-patient-continue-btn"
-                      onPress={finishGooglePatientLogin}
+                      testID="request-otp-btn"
+                      onPress={handleRequestOtp}
                       disabled={loading}
                       style={[styles.primaryBtn, loading && { opacity: 0.6 }]}
                     >
-                      {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.primaryTxt}>Continue</Text>}
+                      {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.primaryTxt}>Send OTP</Text>}
                     </Pressable>
-                  </View>
-                ) : (
-                  <Pressable testID="google-btn" onPress={handleGoogle} style={styles.googleBtn}>
-                    <Icon name="logo-google" size={18} color="#0F172A" />
-                    <Text style={styles.googleTxt}>Continue with Google</Text>
-                  </Pressable>
+                    <View style={styles.dividerRow}>
+                      <View style={styles.divider} />
+                      <Text style={styles.dividerTxt}>or</Text>
+                      <View style={styles.divider} />
+                    </View>
+                    <Pressable testID="google-btn" onPress={handleGoogle} style={styles.googleBtn}>
+                      <Icon name="logo-google" size={18} color="#0F172A" />
+                      <Text style={styles.googleTxt}>Continue with Google</Text>
+                    </Pressable>
+                  </>
                 )}
               </View>
             ) : (
@@ -398,7 +393,7 @@ export default function LoginScreen() {
                   <TextInput
                     testID="otp-input"
                     value={otp}
-                    onChangeText={(t) => setOtp(t.replace(/\D/g, ""))}
+                    onChangeText={(t) => setOtp(t.replace(/\\D/g, ""))}
                     placeholder="6-digit OTP"
                     keyboardType="number-pad"
                     style={[styles.input, { letterSpacing: 8, fontSize: 18 }]}
@@ -406,29 +401,18 @@ export default function LoginScreen() {
                     placeholderTextColor="#94A3B8"
                   />
                 </View>
-
                 {error && <Text style={styles.error}>{error}</Text>}
-
                 <Pressable
                   testID="verify-otp-btn"
                   onPress={handleVerifyOtp}
                   disabled={loading}
                   style={[styles.primaryBtn, loading && { opacity: 0.6 }]}
                 >
-                  {loading ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                  ) : (
-                    <Text style={styles.primaryTxt}>Verify & Continue</Text>
-                  )}
+                  {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.primaryTxt}>Verify & Continue</Text>}
                 </Pressable>
-
                 <Pressable
                   testID="change-phone-btn"
-                  onPress={() => {
-                    setMode("phone");
-                    setOtp("");
-                    setError(null);
-                  }}
+                  onPress={() => { setMode("phone"); setOtp(""); setError(null); }}
                   style={styles.ghostBtn}
                 >
                   <Text style={styles.ghostTxt}>Change phone number</Text>
@@ -541,6 +525,22 @@ const useStyles = makeStyles((c) => ({
   dividerRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginVertical: spacing.md },
   divider: { flex: 1, height: 1, backgroundColor: c.border },
   dividerTxt: { color: c.muted, fontSize: 12 },
+
+  loginIntro: { color: c.onSurface, fontSize: 18, fontWeight: "800", textAlign: "center", marginTop: spacing.xs },
+  loginIntroSub: { color: c.muted, fontSize: 12, textAlign: "center", marginTop: 4, marginBottom: spacing.md },
+  googlePrimaryBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
+    backgroundColor: "#FFFFFF", borderColor: c.borderStrong, borderWidth: 1,
+    paddingVertical: 16, borderRadius: radius.pill,
+  },
+  googlePrimaryTxt: { color: "#0F172A", fontWeight: "700", fontSize: 15 },
+  comingSoonBox: {
+    flexDirection: "row", alignItems: "center", gap: spacing.sm,
+    backgroundColor: c.surfaceSecondary, borderColor: c.border, borderWidth: 1,
+    borderRadius: radius.md, padding: spacing.md, marginTop: spacing.md,
+  },
+  comingSoonTitle: { color: c.onSurfaceSecondary, fontWeight: "700", fontSize: 12 },
+  comingSoonText: { color: c.muted, fontSize: 11, marginTop: 2 },
 
   googleBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
