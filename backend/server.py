@@ -219,6 +219,9 @@ class WebsiteAppointmentRequest(BaseModel):
     claim_token_hash: Optional[str] = Field(default=None, exclude=True)
     claimed_by_user_id: Optional[str] = None
     claimed_at: Optional[datetime] = None
+    scheduled_date: Optional[str] = None
+    scheduled_time: Optional[str] = None
+    confirmed_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -231,7 +234,12 @@ class WebsiteAppointmentClaim(BaseModel):
 
 
 class WebsiteAppointmentStatusUpdate(BaseModel):
-    status: Literal["pending", "contacted", "converted", "closed"]
+    status: Literal["pending", "contacted", "closed"]
+
+
+class WebsiteAppointmentConfirmation(BaseModel):
+    date: str
+    time: str
 
 
 class AppointmentCreate(BaseModel):
@@ -1101,6 +1109,41 @@ async def update_website_appointment_request(
         raise HTTPException(status_code=404, detail="Website appointment request not found")
     await db.appointment_requests.update_one({"id": request_id}, {"$set": {"status": payload.status}})
     row["status"] = payload.status
+    return WebsiteAppointmentRequest(**row)
+
+
+@api_router.post("/appointment-requests/{request_id}/confirm", response_model=WebsiteAppointmentRequest)
+async def confirm_website_appointment_request(
+    request_id: str,
+    payload: WebsiteAppointmentConfirmation,
+    user: dict = Depends(get_current_user),
+):
+    """Schedule a website request; preserve its identity for patient tracking."""
+    await require_role("doctor", user)
+    from datetime import date as date_type, datetime as datetime_type
+    try:
+        appointment_date = date_type.fromisoformat(payload.date.strip())
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Enter a valid date (YYYY-MM-DD)")
+    if appointment_date < datetime_type.now(timezone.utc).date():
+        raise HTTPException(status_code=422, detail="Appointment date cannot be in the past")
+    import re
+    time_value = payload.time.strip()
+    if not re.fullmatch(r"(?:[01]\\d|2[0-3]):[0-5]\\d", time_value):
+        raise HTTPException(status_code=422, detail="Enter a valid time (HH:MM, 24-hour)")
+    row = await db.appointment_requests.find_one({"id": request_id}, {"_id": 0})
+    if not row:
+        raise HTTPException(status_code=404, detail="Website appointment request not found")
+    if row.get("status") == "closed":
+        raise HTTPException(status_code=409, detail="Closed requests cannot be confirmed")
+    update = {
+        "status": "converted",
+        "scheduled_date": appointment_date.isoformat(),
+        "scheduled_time": time_value,
+        "confirmed_at": datetime_type.now(timezone.utc),
+    }
+    await db.appointment_requests.update_one({"id": request_id}, {"$set": update})
+    row.update(update)
     return WebsiteAppointmentRequest(**row)
 
 
