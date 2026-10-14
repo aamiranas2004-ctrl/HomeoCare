@@ -222,6 +222,7 @@ class WebsiteAppointmentRequest(BaseModel):
     scheduled_date: Optional[str] = None
     scheduled_time: Optional[str] = None
     confirmed_at: Optional[datetime] = None
+    linked_appointment_id: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -1069,6 +1070,45 @@ async def claim_website_appointment_request(
     return WebsiteAppointmentRequest(**row)
 
 
+async def _sync_website_appointment(request_id: str):
+    """Idempotently connect a claimed website request to one real appointment."""
+    row = await db.appointment_requests.find_one({"id": request_id}, {"_id": 0})
+    if not row or not row.get("claimed_by_user_id") or not row.get("scheduled_date"):
+        return
+    if row.get("status") not in ("converted", "completed", "cancelled"):
+        return
+    patient = await db.users.find_one({"user_id": row["claimed_by_user_id"], "role": "patient"}, {"_id": 0})
+    doctor = await db.users.find_one({"role": "doctor"}, {"_id": 0})
+    if not patient or not doctor:
+        return
+    appointment_id = row.get("linked_appointment_id") or "website-" + request_id
+    mode = "online" if "online" in (row.get("consultation_mode") or "").lower() else "in-clinic"
+    appt_status = {"converted": "confirmed", "completed": "completed", "cancelled": "cancelled"}[row["status"]]
+    appointment = Appointment(
+        id=appointment_id,
+        patient_id=patient["user_id"],
+        patient_name=row.get("full_name") or patient.get("name", ""),
+        patient_uhid=patient.get("uhid"),
+        doctor_id=doctor["user_id"],
+        doctor_name=doctor.get("name", ""),
+        date=row["scheduled_date"],
+        time_slot=row.get("scheduled_time") or "",
+        mode=mode,
+        symptoms=row.get("health_concern") or "",
+        status=appt_status,
+        created_at=row.get("created_at") or datetime.now(timezone.utc),
+    )
+    await db.appointments.update_one(
+        {"id": appointment_id},
+        {"$set": {"date": appointment.date, "time_slot": appointment.time_slot, "status": appt_status, "mode": mode},
+         "$setOnInsert": appointment.dict()},
+        upsert=True,
+    )
+    await db.appointment_requests.update_one(
+        {"id": request_id}, {"$set": {"linked_appointment_id": appointment_id}}
+    )
+
+
 @api_router.get("/appointment-requests/mine", response_model=List[WebsiteAppointmentRequest])
 async def list_my_website_appointment_requests(user: dict = Depends(get_current_user)):
     """Return requests linked to this patient, auto-linking by verified Google email."""
@@ -1085,6 +1125,11 @@ async def list_my_website_appointment_requests(user: dict = Depends(get_current_
             },
             {"$set": {"claimed_by_user_id": user["user_id"], "claimed_at": datetime.now(timezone.utc)}},
         )
+    rows = await db.appointment_requests.find(
+        {"claimed_by_user_id": user["user_id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+    for row in rows:
+        await _sync_website_appointment(row["id"])
     rows = await db.appointment_requests.find(
         {"claimed_by_user_id": user["user_id"]}, {"_id": 0}
     ).sort("created_at", -1).to_list(100)
@@ -1113,6 +1158,8 @@ async def update_website_appointment_request(
         raise HTTPException(status_code=409, detail="This appointment is already finalized")
     await db.appointment_requests.update_one({"id": request_id}, {"$set": {"status": payload.status}})
     row["status"] = payload.status
+    await _sync_website_appointment(request_id)
+    row = await db.appointment_requests.find_one({"id": request_id}, {"_id": 0})
     return WebsiteAppointmentRequest(**row)
 
 
@@ -1148,6 +1195,8 @@ async def confirm_website_appointment_request(
     }
     await db.appointment_requests.update_one({"id": request_id}, {"$set": update})
     row.update(update)
+    await _sync_website_appointment(request_id)
+    row = await db.appointment_requests.find_one({"id": request_id}, {"_id": 0})
     return WebsiteAppointmentRequest(**row)
 
 
