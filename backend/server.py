@@ -1100,9 +1100,12 @@ async def _sync_website_appointment(request_id: str):
     )
     await db.appointments.update_one(
         {"id": appointment_id},
-        {"$set": {"date": appointment.date, "time_slot": appointment.time_slot, "status": appt_status, "mode": mode},
-         "$setOnInsert": appointment.dict()},
+        {"$setOnInsert": appointment.dict()},
         upsert=True,
+    )
+    await db.appointments.update_one(
+        {"id": appointment_id},
+        {"$set": {"date": appointment.date, "time_slot": appointment.time_slot, "status": appt_status, "mode": mode}},
     )
     await db.appointment_requests.update_one(
         {"id": request_id}, {"$set": {"linked_appointment_id": appointment_id}}
