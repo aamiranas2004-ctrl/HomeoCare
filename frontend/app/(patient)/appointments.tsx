@@ -42,6 +42,8 @@ export default function AppointmentsScreen() {
     setRefreshing(false);
   };
 
+  const visibleRequests = requests.filter((r) => tab === "past" ? ["completed", "cancelled", "closed"].includes(r.status) : !["completed", "cancelled", "closed"].includes(r.status));
+
   const filtered = items.filter((a) => {
     const done = a.status === "completed" || a.status === "cancelled";
     return tab === "upcoming" ? !done : done;
@@ -89,18 +91,18 @@ export default function AppointmentsScreen() {
           contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         >
-          {tab === "upcoming" && requests.length > 0 ? (
+          {visibleRequests.length > 0 ? (
             <View style={styles.requestSection}>
               <Text style={styles.requestHeading}>Appointment Requests</Text>
-              {requests.map((r) => {
-                const label = r.status === "contacted" ? "Contacted" : r.status === "converted" ? "Appointment Confirmed" : r.status === "closed" ? "Closed" : "Request Received";
+              {visibleRequests.map((r) => {
+                const label = r.status === "contacted" ? "Contacted" : r.status === "converted" ? "Appointment Confirmed" : r.status === "completed" ? "Completed" : r.status === "cancelled" ? "Cancelled" : r.status === "closed" ? "Closed" : "Request Received";
                 return (
                   <View key={r.id} style={styles.requestCard}>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.requestTitle}>{r.health_concern}</Text>
                       <Text style={styles.requestMeta}>{r.consultation_mode} • {label}</Text>
-                      {r.status === "converted" && r.scheduled_date && r.scheduled_time ? (
-                        <Text style={styles.requestMeta}>Confirmed for {r.scheduled_date} at {r.scheduled_time} (24-hour)</Text>
+                      {["converted", "completed", "cancelled"].includes(r.status) && r.scheduled_date && r.scheduled_time ? (
+                        <Text style={styles.requestMeta}>{new Date(r.scheduled_date + "T12:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })} at {new Date("2000-01-01T" + r.scheduled_time + ":00").toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true })}</Text>
                       ) : null}
                     </View>
                     <View style={styles.requestChip}><Text style={styles.requestChipTxt}>{label}</Text></View>
@@ -109,7 +111,7 @@ export default function AppointmentsScreen() {
               })}
             </View>
           ) : null}
-                    {filtered.length === 0 ? (
+                    {filtered.length === 0 && visibleRequests.length === 0 ? (
             <View style={styles.empty}>
               <Icon name="calendar-outline" size={48} color="#CBD5E1" />
               <Text style={styles.emptyTxt}>No {tab} appointments</Text>
