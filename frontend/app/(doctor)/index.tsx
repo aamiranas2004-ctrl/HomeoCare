@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, ScrollView, Pressable, ActivityIndicator, RefreshControl, TextInput } from "react-native";
+import { View, Text, ScrollView, Pressable, ActivityIndicator, RefreshControl, TextInput, Platform } from "react-native";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import Icon from "@/src/components/icon";
@@ -143,11 +143,33 @@ export default function DoctorQueue() {
                   confirmingRequestId === r.id ? (
                     <View style={{ gap: spacing.sm, marginTop: spacing.sm }}>
                       <Text style={styles.symLbl}>Appointment date (YYYY-MM-DD)</Text>
-                      <TextInput value={confirmDate} onChangeText={setConfirmDate} placeholder="2026-10-20" style={styles.textArea} autoCapitalize="none" />
+                      {Platform.OS === "web" ? React.createElement("input" as any, {
+                        type: "date", value: confirmDate, min: new Date().toLocaleDateString("en-CA"),
+                        onChange: (e: any) => { setConfirmDate(e.target.value); setConfirmError(""); },
+                        style: { width: "100%", boxSizing: "border-box", padding: 14, fontSize: 16, border: "1px solid #CBD5E1", borderRadius: 10, backgroundColor: "#FFFFFF", color: "#0F172A" },
+                        "aria-label": "Appointment date",
+                      }) : (
+                        <TextInput value={confirmDate} onChangeText={setConfirmDate} placeholder="YYYY-MM-DD" style={styles.textArea} autoCapitalize="none" />
+                      )}
                       <Text style={styles.symLbl}>Time (HH:MM, 24-hour)</Text>
-                      <TextInput value={confirmTime} onChangeText={setConfirmTime} placeholder="14:30" style={styles.textArea} autoCapitalize="none" />
+                      {Platform.OS === "web" ? React.createElement("input" as any, {
+                        type: "time", value: confirmTime, step: 60,
+                        onChange: (e: any) => { setConfirmTime(e.target.value); setConfirmError(""); },
+                        style: { width: "100%", boxSizing: "border-box", padding: 14, fontSize: 16, border: "1px solid #CBD5E1", borderRadius: 10, backgroundColor: "#FFFFFF", color: "#0F172A" },
+                        "aria-label": "Appointment time",
+                      }) : (
+                        <TextInput value={confirmTime} onChangeText={setConfirmTime} placeholder="HH:MM" style={styles.textArea} autoCapitalize="none" />
+                      )}
                       {confirmError ? <Text style={{ color: "#B91C1C" }}>{confirmError}</Text> : null}
                       <Pressable disabled={savingConfirmation} style={styles.webAction} onPress={async () => {
+                        if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(confirmDate) || Number.isNaN(Date.parse(confirmDate + "T00:00:00"))) {
+                          setConfirmError("Please choose a valid appointment date.");
+                          return;
+                        }
+                        if (!/^(?:[01]\\d|2[0-3]):[0-5]\\d$/.test(confirmTime)) {
+                          setConfirmError("Please choose a valid appointment time.");
+                          return;
+                        }
                         setSavingConfirmation(true);
                         setConfirmError("");
                         try {
