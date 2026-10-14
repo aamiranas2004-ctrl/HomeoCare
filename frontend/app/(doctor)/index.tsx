@@ -25,6 +25,11 @@ export default function DoctorQueue() {
   const [refreshing, setRefreshing] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
+  const [confirmingRequestId, setConfirmingRequestId] = useState<string | null>(null);
+  const [confirmDate, setConfirmDate] = useState("");
+  const [confirmTime, setConfirmTime] = useState("");
+  const [confirmError, setConfirmError] = useState("");
+  const [savingConfirmation, setSavingConfirmation] = useState(false);
 
   const load = async () => {
     try {
@@ -131,6 +136,48 @@ export default function DoctorQueue() {
                 {r.additional_information ? (
                   <Text style={styles.sym}><Text style={styles.symLbl}>Additional information: </Text>{r.additional_information}</Text>
                 ) : null}
+                {r.status === "converted" && r.scheduled_date ? (
+                  <Text style={styles.sym}>Confirmed: {r.scheduled_date} at {r.scheduled_time} (24-hour)</Text>
+                ) : null}
+                {r.status !== "closed" && (
+                  confirmingRequestId === r.id ? (
+                    <View style={{ gap: spacing.sm, marginTop: spacing.sm }}>
+                      <Text style={styles.symLbl}>Appointment date (YYYY-MM-DD)</Text>
+                      <TextInput value={confirmDate} onChangeText={setConfirmDate} placeholder="2026-10-20" style={styles.textArea} autoCapitalize="none" />
+                      <Text style={styles.symLbl}>Time (HH:MM, 24-hour)</Text>
+                      <TextInput value={confirmTime} onChangeText={setConfirmTime} placeholder="14:30" style={styles.textArea} autoCapitalize="none" />
+                      {confirmError ? <Text style={{ color: "#B91C1C" }}>{confirmError}</Text> : null}
+                      <Pressable disabled={savingConfirmation} style={styles.webAction} onPress={async () => {
+                        setSavingConfirmation(true);
+                        setConfirmError("");
+                        try {
+                          await apiJson(`/appointment-requests/${r.id}/confirm`, {
+                            method: "POST",
+                            body: JSON.stringify({ date: confirmDate.trim(), time: confirmTime.trim() }),
+                          });
+                          setConfirmingRequestId(null);
+                          setConfirmDate("");
+                          setConfirmTime("");
+                          await load();
+                        } catch (e: any) {
+                          setConfirmError(e?.message || "Could not confirm appointment");
+                        } finally {
+                          setSavingConfirmation(false);
+                        }
+                      }}><Text style={styles.webActionTxt}>{savingConfirmation ? "Saving..." : "Save Confirmation"}</Text></Pressable>
+                      <Pressable onPress={() => { setConfirmingRequestId(null); setConfirmError(""); }}>
+                        <Text style={styles.webMeta}>Cancel</Text>
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <Pressable style={styles.webAction} onPress={() => {
+                      setConfirmingRequestId(r.id);
+                      setConfirmDate(r.scheduled_date || "");
+                      setConfirmTime(r.scheduled_time || "");
+                      setConfirmError("");
+                    }}><Text style={styles.webActionTxt}>{r.status === "converted" ? "Reschedule" : "Confirm Appointment"}</Text></Pressable>
+                  )
+                )}
                 {r.status === "pending" ? (
                   <Pressable
                     onPress={async () => {
