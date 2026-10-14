@@ -1129,7 +1129,7 @@ async def confirm_website_appointment_request(
         raise HTTPException(status_code=422, detail="Appointment date cannot be in the past")
     import re
     time_value = payload.time.strip()
-    if not re.fullmatch(r"(?:[01]\\d|2[0-3]):[0-5]\\d", time_value):
+    if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", time_value):
         raise HTTPException(status_code=422, detail="Enter a valid time (HH:MM, 24-hour)")
     row = await db.appointment_requests.find_one({"id": request_id}, {"_id": 0})
     if not row:
