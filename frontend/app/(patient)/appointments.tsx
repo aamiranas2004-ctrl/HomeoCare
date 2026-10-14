@@ -21,10 +21,11 @@ export default function AppointmentsScreen() {
 
   const load = async () => {
     try {
-      const [data, u, requestData] = await Promise.all([
+      // Link eligible website requests before loading canonical appointments.
+      const requestData = await apiJson<any[]>("/appointment-requests/mine").catch(() => []);
+      const [data, u] = await Promise.all([
         apiJson<any[]>("/appointments/mine"),
         apiJson<Record<string, number>>("/chat/unread").catch(() => ({})),
-        apiJson<any[]>("/appointment-requests/mine").catch(() => []),
       ]);
       setItems(data);
       setUnread(u || {});
