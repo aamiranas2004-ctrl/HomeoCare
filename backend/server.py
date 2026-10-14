@@ -214,7 +214,7 @@ class WebsiteAppointmentRequest(BaseModel):
     consultation_mode: str
     additional_information: Optional[str] = None
     source: Literal["website"] = "website"
-    status: Literal["pending", "contacted", "converted", "closed"] = "pending"
+    status: Literal["pending", "contacted", "converted", "closed", "completed", "cancelled"] = "pending"
     claim_token: Optional[str] = Field(default=None, exclude=True)
     claim_token_hash: Optional[str] = Field(default=None, exclude=True)
     claimed_by_user_id: Optional[str] = None
@@ -234,7 +234,7 @@ class WebsiteAppointmentClaim(BaseModel):
 
 
 class WebsiteAppointmentStatusUpdate(BaseModel):
-    status: Literal["pending", "contacted", "closed"]
+    status: Literal["pending", "contacted", "closed", "completed", "cancelled"]
 
 
 class WebsiteAppointmentConfirmation(BaseModel):
@@ -1107,6 +1107,10 @@ async def update_website_appointment_request(
     row = await db.appointment_requests.find_one({"id": request_id}, {"_id": 0})
     if not row:
         raise HTTPException(status_code=404, detail="Website appointment request not found")
+    if payload.status in ("completed", "cancelled") and row.get("status") != "converted":
+        raise HTTPException(status_code=409, detail="Only confirmed appointments can be completed or cancelled")
+    if row.get("status") in ("completed", "cancelled", "closed"):
+        raise HTTPException(status_code=409, detail="This appointment is already finalized")
     await db.appointment_requests.update_one({"id": request_id}, {"$set": {"status": payload.status}})
     row["status"] = payload.status
     return WebsiteAppointmentRequest(**row)
@@ -1134,8 +1138,8 @@ async def confirm_website_appointment_request(
     row = await db.appointment_requests.find_one({"id": request_id}, {"_id": 0})
     if not row:
         raise HTTPException(status_code=404, detail="Website appointment request not found")
-    if row.get("status") == "closed":
-        raise HTTPException(status_code=409, detail="Closed requests cannot be confirmed")
+    if row.get("status") in ("closed", "completed", "cancelled"):
+        raise HTTPException(status_code=409, detail="Finalized requests cannot be confirmed")
     update = {
         "status": "converted",
         "scheduled_date": appointment_date.isoformat(),
