@@ -42,7 +42,7 @@ export default function AppointmentsScreen() {
     setRefreshing(false);
   };
 
-  const visibleRequests = requests.filter((r) => tab === "past" ? ["completed", "cancelled", "closed"].includes(r.status) : !["completed", "cancelled", "closed"].includes(r.status));
+  const visibleRequests = requests.filter((r) => !r.linked_appointment_id && (tab === "past" ? ["completed", "cancelled", "closed"].includes(r.status) : !["completed", "cancelled", "closed"].includes(r.status)));
 
   const filtered = items.filter((a) => {
     const done = a.status === "completed" || a.status === "cancelled";
