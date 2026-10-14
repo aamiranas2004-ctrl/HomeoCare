@@ -30,6 +30,7 @@ export default function DoctorQueue() {
   const [confirmTime, setConfirmTime] = useState("");
   const [confirmError, setConfirmError] = useState("");
   const [savingConfirmation, setSavingConfirmation] = useState(false);
+  const [finalizingRequest, setFinalizingRequest] = useState<{ id: string; status: "completed" | "cancelled" } | null>(null);
 
   const load = async () => {
     try {
@@ -139,7 +140,7 @@ export default function DoctorQueue() {
                 {r.status === "converted" && r.scheduled_date ? (
                   <Text style={styles.sym}>Confirmed: {r.scheduled_date} at {r.scheduled_time} (24-hour)</Text>
                 ) : null}
-                {r.status !== "closed" && (
+                {!["closed", "completed", "cancelled"].includes(r.status) && (
                   confirmingRequestId === r.id ? (
                     <View style={{ gap: spacing.sm, marginTop: spacing.sm }}>
                       <Text style={styles.symLbl}>Appointment date (YYYY-MM-DD)</Text>
@@ -200,6 +201,29 @@ export default function DoctorQueue() {
                     }}><Text style={styles.webActionTxt}>{r.status === "converted" ? "Reschedule" : "Confirm Appointment"}</Text></Pressable>
                   )
                 )}
+                {r.status === "converted" ? (
+                  <View style={{ flexDirection: "row", gap: spacing.sm, flexWrap: "wrap" }}>
+                    {(["completed", "cancelled"] as const).map((status) => (
+                      <Pressable key={status} style={styles.webAction} onPress={() => setFinalizingRequest({ id: r.id, status })}>
+                        <Text style={styles.webActionTxt}>{status === "completed" ? "Mark Completed" : "Cancel Appointment"}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : null}
+                {finalizingRequest?.id === r.id ? (
+                  <View style={{ gap: spacing.sm }}>
+                    <Text style={styles.sym}>Confirm: mark this appointment as {finalizingRequest.status}?</Text>
+                    <Pressable style={styles.webAction} onPress={async () => {
+                      try {
+                        await apiJson(`/appointment-requests/${r.id}`, { method: "PATCH", body: JSON.stringify({ status: finalizingRequest.status }) });
+                        setFinalizingRequest(null);
+                        await load();
+                      } catch (e: any) { setConfirmError(e?.message || "Could not update appointment"); }
+                    }}><Text style={styles.webActionTxt}>Yes, confirm</Text></Pressable>
+                    <Pressable onPress={() => setFinalizingRequest(null)}><Text style={styles.webMeta}>Keep appointment unchanged</Text></Pressable>
+                    {confirmError ? <Text style={{ color: "#B91C1C" }}>{confirmError}</Text> : null}
+                  </View>
+                ) : null}
                 {r.status === "pending" ? (
                   <Pressable
                     onPress={async () => {
