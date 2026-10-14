@@ -137,6 +137,11 @@ export default function DoctorQueue() {
                 {r.additional_information ? (
                   <Text style={styles.sym}><Text style={styles.symLbl}>Additional information: </Text>{r.additional_information}</Text>
                 ) : null}
+                {r.linked_appointment_id ? (
+                  <Text style={styles.webMeta}>Linked to Patient Appointments below — use that card for consultation notes and chat. Patient uploads are available in the patient record.</Text>
+                ) : r.scheduled_date ? (
+                  <Text style={styles.webMeta}>Awaiting patient account linkage before chat and consultation records become available.</Text>
+                ) : null}
                 {r.status === "converted" && r.scheduled_date ? (
                   <Text style={styles.sym}>Confirmed: {r.scheduled_date} at {r.scheduled_time} (24-hour)</Text>
                 ) : null}
