@@ -20,6 +20,7 @@ export default function DoctorQueue() {
   const { user } = useAuth();
   const [items, setItems] = useState<any[]>([]);
   const [websiteRequests, setWebsiteRequests] = useState<any[]>([]);
+  const [showLinkedRequests, setShowLinkedRequests] = useState(false);
   const [unread, setUnread] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -59,6 +60,8 @@ export default function DoctorQueue() {
     } catch {}
   };
 
+  const visibleWebsiteRequests = websiteRequests.filter((r) => showLinkedRequests || !r.linked_appointment_id);
+  const linkedWebsiteIds = new Set(websiteRequests.filter((r) => r.linked_appointment_id).map((r) => r.linked_appointment_id));
   const waiting = items.filter((a) => a.status === "pending" || a.status === "confirmed").length + websiteRequests.filter((r) => r.status === "pending").length;
   const completed = items.filter((a) => a.status === "completed").length;
 
@@ -115,13 +118,16 @@ export default function DoctorQueue() {
           contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + spacing.xxxl, gap: spacing.md }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} />}
         >
-          <Text style={styles.section}>Website Appointment Requests</Text>
-          {websiteRequests.length === 0 ? (
+          <Text style={styles.section}>Website Requests Awaiting Action</Text>
+          <Pressable onPress={() => setShowLinkedRequests((v) => !v)} style={styles.webAction}>
+            <Text style={styles.webActionTxt}>{showLinkedRequests ? "Hide Linked Website Requests" : `Show Linked Website Requests (${websiteRequests.filter((r) => r.linked_appointment_id).length})`}</Text>
+          </Pressable>
+          {visibleWebsiteRequests.length === 0 ? (
             <View style={styles.emptyWeb}>
-              <Text style={styles.emptyWebTxt}>No website appointment requests</Text>
+              <Text style={styles.emptyWebTxt}>No unlinked website requests. Linked bookings are listed under Patient Appointments below.</Text>
             </View>
           ) : (
-            websiteRequests.map((r) => (
+            visibleWebsiteRequests.map((r) => (
               <View key={r.id} style={styles.webCard} testID={`website-request-${r.id}`}>
                 <View style={styles.cardHead}>
                   <View style={{ flex: 1 }}>
@@ -247,7 +253,7 @@ export default function DoctorQueue() {
             ))
           )}
 
-          <Text style={[styles.section, { marginTop: spacing.md }]}>Patient Appointments</Text>
+          <Text style={[styles.section, { marginTop: spacing.md }]}>Patient Appointments · Website & App</Text>
           {items.length === 0 ? (
             <View style={styles.empty}>
               <Icon name="calendar-outline" size={48} color="#CBD5E1" />
@@ -259,6 +265,7 @@ export default function DoctorQueue() {
                 <View style={styles.cardHead}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.pName}>{a.patient_name}</Text>
+                    <Text style={styles.webMeta}>{linkedWebsiteIds.has(a.id) ? "Booked via Website" : "Booked via App"}</Text>
                     <Text style={styles.pMeta}>
                       {a.patient_uhid || "No UHID"} • {a.date} • {a.time_slot}
                     </Text>
