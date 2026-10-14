@@ -162,11 +162,11 @@ export default function DoctorQueue() {
                       )}
                       {confirmError ? <Text style={{ color: "#B91C1C" }}>{confirmError}</Text> : null}
                       <Pressable disabled={savingConfirmation} style={styles.webAction} onPress={async () => {
-                        if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(confirmDate) || Number.isNaN(Date.parse(confirmDate + "T00:00:00"))) {
+                        if (!/^\d{4}-\d{2}-\d{2}$/.test(confirmDate) || Number.isNaN(Date.parse(confirmDate + "T00:00:00"))) {
                           setConfirmError("Please choose a valid appointment date.");
                           return;
                         }
-                        if (!/^(?:[01]\\d|2[0-3]):[0-5]\\d$/.test(confirmTime)) {
+                        if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(confirmTime)) {
                           setConfirmError("Please choose a valid appointment time.");
                           return;
                         }
