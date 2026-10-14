@@ -99,6 +99,9 @@ export default function AppointmentsScreen() {
                     <View style={{ flex: 1 }}>
                       <Text style={styles.requestTitle}>{r.health_concern}</Text>
                       <Text style={styles.requestMeta}>{r.consultation_mode} • {label}</Text>
+                      {r.status === "converted" && r.scheduled_date && r.scheduled_time ? (
+                        <Text style={styles.requestMeta}>Confirmed for {r.scheduled_date} at {r.scheduled_time} (24-hour)</Text>
+                      ) : null}
                     </View>
                     <View style={styles.requestChip}><Text style={styles.requestChipTxt}>{label}</Text></View>
                   </View>
