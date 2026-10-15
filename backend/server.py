@@ -1116,18 +1116,7 @@ async def _sync_website_appointment(request_id: str):
 async def list_my_website_appointment_requests(user: dict = Depends(get_current_user)):
     """Return requests linked to this patient, auto-linking by verified Google email."""
     await require_role("patient", user)
-    verified_email = (user.get("email") or "").strip().lower()
-    if verified_email:
-        await db.appointment_requests.update_many(
-            {
-                "$and": [
-                    {"$or": [{"claimed_by_user_id": None}, {"claimed_by_user_id": {"$exists": False}}]},
-                    {"email": {"$type": "string"}},
-                    {"$expr": {"$eq": [{"$toLower": "$email"}, verified_email]}},
-                ]
-            },
-            {"$set": {"claimed_by_user_id": user["user_id"], "claimed_at": datetime.now(timezone.utc)}},
-        )
+    # Only explicitly claimed website requests may be linked to a patient.
     rows = await db.appointment_requests.find(
         {"claimed_by_user_id": user["user_id"]}, {"_id": 0}
     ).sort("created_at", -1).to_list(100)
