@@ -14,6 +14,7 @@ from fastapi.concurrency import run_in_threadpool
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import ReturnDocument
 import os
 import uuid
 import random
@@ -93,6 +94,17 @@ db = client[DB_NAME]
 
 app = FastAPI(title="Agrawal Homeo Hall API")
 api_router = APIRouter(prefix="/api")
+
+
+@app.middleware("http")
+async def private_api_responses(request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -226,8 +238,9 @@ class WebsiteAppointmentRequest(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-class WebsiteAppointmentRequestCreated(WebsiteAppointmentRequest):
-    claim_token: str
+class WebsiteAppointmentRequestCreated(BaseModel):
+    id: str
+    claim_token: Optional[str] = None
 
 
 class WebsiteAppointmentClaim(BaseModel):
@@ -365,6 +378,9 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
     user = await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    # Authentication evidence belongs to this session, never to a mutable profile.
+    user["_google_email"] = session.get("google_verified_email")
+    user["_google_sub"] = session.get("google_sub")
     return user
 
 
@@ -706,7 +722,7 @@ async def google_callback(code: Optional[str] = None, state: Optional[str] = Non
         data = user_resp.json()
 
     email = (data.get("email") or "").strip().lower()
-    if not email or data.get("email_verified") is not True:
+    if not email or data.get("email_verified") is not True or not data.get("sub"):
         raise HTTPException(status_code=401, detail="A verified Google email is required")
 
     is_temp_doctor = email in TEMP_DOCTOR_EMAILS
@@ -739,6 +755,8 @@ async def google_callback(code: Optional[str] = None, state: Optional[str] = Non
     one_time_code = uuid.uuid4().hex + uuid.uuid4().hex
     await db.oauth_codes.insert_one({
         "code": one_time_code,
+        "google_verified_email": email,
+        "google_sub": data["sub"],
         "user_id": user_id,
         "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5),
         "created_at": datetime.now(timezone.utc),
@@ -764,7 +782,9 @@ async def google_exchange(payload: GoogleCodeExchange):
         raise HTTPException(status_code=401, detail="User not found")
     user_doc = await ensure_user_defaults(user_doc)
     session_row = _mint_session_token(user_doc["user_id"])
-    await db.user_sessions.insert_one({**session_row})
+    await db.user_sessions.insert_one({**session_row,
+        "google_verified_email": row.get("google_verified_email"),
+        "google_sub": row.get("google_sub")})
     return {"session_token": session_row["session_token"], "user": user_doc}
 
 @api_router.post("/auth/otp/request")
@@ -997,7 +1017,7 @@ async def create_website_appointment_request(
     """
     if not WEBSITE_FORM_SECRET:
         raise HTTPException(status_code=503, detail="Website appointment integration is not configured")
-    if not x_website_form_secret or x_website_form_secret != WEBSITE_FORM_SECRET:
+    if not x_website_form_secret or not secrets.compare_digest(x_website_form_secret, WEBSITE_FORM_SECRET):
         raise HTTPException(status_code=401, detail="Invalid website form credentials")
 
     full_name = (payload.full_name or "").strip()
@@ -1020,8 +1040,8 @@ async def create_website_appointment_request(
     if additional and len(additional) > 4000:
         raise HTTPException(status_code=400, detail="Additional information is too long")
 
-    claim_token = secrets.token_urlsafe(32)
-    claim_token_hash = hashlib.sha256(claim_token.encode("utf-8")).hexdigest()
+    claim_token = secrets.token_urlsafe(32) if email else None
+    claim_token_hash = hashlib.sha256(claim_token.encode("utf-8")).hexdigest() if claim_token else None
 
     request_row = WebsiteAppointmentRequest(
         full_name=full_name,
@@ -1032,7 +1052,11 @@ async def create_website_appointment_request(
         additional_information=additional,
         claim_token_hash=claim_token_hash,
     )
-    await db.appointment_requests.insert_one(request_row.dict())
+    stored = request_row.dict()
+    if claim_token_hash:
+        stored.update(claim_token_hash=claim_token_hash, claim_version=2,
+                      claim_expires_at=datetime.now(timezone.utc) + timedelta(hours=24))
+    await db.appointment_requests.insert_one(stored)
     # Return the opaque token only to the trusted WordPress server on creation.
     # Only its SHA-256 hash is stored in MongoDB.
     response = request_row.dict()
@@ -1051,22 +1075,24 @@ async def claim_website_appointment_request(
     if not claim_token or len(claim_token) > 200:
         raise HTTPException(status_code=400, detail="Invalid claim token")
 
-    claim_token_hash = hashlib.sha256(claim_token.encode("utf-8")).hexdigest()
-    row = await db.appointment_requests.find_one({"claim_token_hash": claim_token_hash}, {"_id": 0})
-    if not row:
-        raise HTTPException(status_code=404, detail="Appointment request link is invalid")
-
-    existing_user_id = row.get("claimed_by_user_id")
-    if existing_user_id and existing_user_id != user["user_id"]:
-        raise HTTPException(status_code=409, detail="Appointment request has already been claimed")
-
+    email = user.get("_google_email")
+    if not email or not user.get("_google_sub"):
+        raise HTTPException(status_code=403, detail="Sign in with the Google account matching your booking email")
     now = datetime.now(timezone.utc)
-    await db.appointment_requests.update_one(
-        {"id": row["id"], "$or": [{"claimed_by_user_id": None}, {"claimed_by_user_id": {"$exists": False}}, {"claimed_by_user_id": user["user_id"]}]},
-        {"$set": {"claimed_by_user_id": user["user_id"], "claimed_at": row.get("claimed_at") or now}},
+    # One conditional write checks ownership, expiry and single use together.
+    # Legacy unclaimed tokens deliberately fail closed; existing links remain intact.
+    row = await db.appointment_requests.find_one_and_update(
+        {"claim_token_hash": hashlib.sha256(claim_token.encode("utf-8")).hexdigest(),
+         "claim_version": 2, "email": email, "claim_expires_at": {"$gt": now},
+         "claimed_by_user_id": None},
+        {"$set": {"claimed_by_user_id": user["user_id"], "claimed_at": now,
+                  "email_verified_at": now},
+         "$unset": {"claim_token_hash": "", "claim_expires_at": ""}},
+        return_document=ReturnDocument.AFTER,
     )
-    row["claimed_by_user_id"] = user["user_id"]
-    row["claimed_at"] = row.get("claimed_at") or now
+    if not row:
+        raise HTTPException(status_code=400, detail="Link unavailable. It may be expired, used, or for a different Google account")
+    await _sync_website_appointment(row["id"])
     return WebsiteAppointmentRequest(**row)
 
 
@@ -1082,6 +1108,10 @@ async def _sync_website_appointment(request_id: str):
     if not patient or not doctor:
         return
     appointment_id = row.get("linked_appointment_id") or "website-" + request_id
+    existing = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+    if existing and existing.get("patient_id") != patient["user_id"]:
+        logger.error("Website appointment ownership conflict")
+        return
     mode = "online" if "online" in (row.get("consultation_mode") or "").lower() else "in-clinic"
     appt_status = {"converted": "confirmed", "completed": "completed", "cancelled": "cancelled"}[row["status"]]
     appointment = Appointment(
@@ -1104,7 +1134,7 @@ async def _sync_website_appointment(request_id: str):
         upsert=True,
     )
     await db.appointments.update_one(
-        {"id": appointment_id},
+        {"id": appointment_id, "patient_id": patient["user_id"], "doctor_id": doctor["user_id"]},
         {"$set": {"date": appointment.date, "time_slot": appointment.time_slot, "status": appt_status, "mode": mode}},
     )
     await db.appointment_requests.update_one(
@@ -1114,7 +1144,7 @@ async def _sync_website_appointment(request_id: str):
 
 @api_router.get("/appointment-requests/mine", response_model=List[WebsiteAppointmentRequest])
 async def list_my_website_appointment_requests(user: dict = Depends(get_current_user)):
-    """Return requests linked to this patient, auto-linking by verified Google email."""
+    """Return only explicitly linked requests owned by this patient."""
     await require_role("patient", user)
     # Only explicitly claimed website requests may be linked to a patient.
     rows = await db.appointment_requests.find(
