@@ -7,6 +7,7 @@ export default function Root({ children }: PropsWithChildren) {
     <html lang="en" style={{ height: "100%" }}>
       <head>
         <meta charSet="utf-8" />
+        <meta name="referrer" content="no-referrer" />
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
         <meta
           name="viewport"
